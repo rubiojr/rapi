@@ -1,0 +1,2 @@
+export RESTIC_REPOSITORY=/tmp/restic
+export RESTIC_PASSWORD=test
