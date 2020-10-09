@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/rubiojr/rapi/blob"
 	"github.com/rubiojr/rapi/key"
 	"github.com/rubiojr/rapi/pack"
 	"github.com/rubiojr/rapi/restic"
@@ -16,7 +17,7 @@ import (
 	"github.com/rubiojr/rapi/examples/util"
 )
 
-var blobIndex = map[restic.ID]string{}
+var blobIndex = map[restic.ID]*blob.Blob{}
 
 func main() {
 	k := util.FindAndOpenKey()
@@ -50,6 +51,10 @@ func indexBlobsInPack(packID, path string, info os.FileInfo, k *key.Key) {
 	blobs, err := pack.List(k.Master, handle, info.Size())
 
 	for _, blob := range blobs {
-		blobIndex[blob.ID] = packID
+		fmt.Printf("%s %s\n", blob.Type, blob.ID)
+		pid, err := restic.ParseID(packID)
+		util.CheckErr(err)
+		blob.PackID = pid
+		blobIndex[blob.ID] = &blob
 	}
 }
