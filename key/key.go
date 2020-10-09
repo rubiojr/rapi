@@ -34,7 +34,7 @@ func OpenFromFile(file, password string) (*Key, error) {
 	}
 	defer f.Close()
 
-	k, err := Open(f, "test")
+	k, err := Open(f, password)
 	return k, err
 }
 
