@@ -1,0 +1,49 @@
+# Prerequisites
+
+## Install restic and other tools used
+
+You'll want the restic binary to be available to play around and do some of the things the code in this guide doesn't cover.
+
+I've been using restic 0.10 while writing this and it's the latest and recommended version, but the previous `0.9.6` (that has been available for a while) should also work.
+
+[jq](https://stedolan.github.io/jq) (`apt-get install jq`) is also used to prettify JSON output and some Bash one-liners. Every other command line tool used should be available in any modern Linux distribution or macOS with the developer tools installed.
+
+## Create a test repository
+
+I've added a sample credentials file to the `examples` directory in this reopsitory. Use it, it'll make it easier to follow this guide if you use the password and repository path provided.
+
+The `creds` file is just a text file with two environment variables:
+
+```
+export RESTIC_REPOSITORY=/tmp/restic
+export RESTIC_PASSWORD=test
+```
+
+To create the repository:
+
+```
+source examples/creds
+restic init
+```
+
+That'll create a `/tmp/restic` repository using the password `test`. **Don't use that repository to backup valuable data**: the password is not recommended for production use and we will intentionally damage the restic repository contents while following this guide.
+
+I've also included some sample data that you can backup now:
+
+```
+restic backup examples/data
+
+repository af668d00 opened successfully, password is correct
+created new cache in /home/rubiojr/.cache/restic
+
+Files:           3 new,     0 changed,     0 unmodified
+Dirs:            4 new,     0 changed,     0 unmodified
+Added to the repo: 12.286 MiB
+
+processed 3 files, 12.283 MiB in 0:00
+snapshot 7eeaf82d saved
+```
+
+## Install Go
+
+Any reasonably recent version of Go should work to follow this guide. I've been using Go 1.15.2 to compile the examples.

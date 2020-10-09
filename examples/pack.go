@@ -2,58 +2,49 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
+	"github.com/dustin/go-humanize"
+	"github.com/rubiojr/rapi/examples/util"
 	"github.com/rubiojr/rapi/key"
 	"github.com/rubiojr/rapi/pack"
 )
 
 func main() {
-	repoPath := os.Getenv("RESTIC_REPOSITORY")
-	repoPass := os.Getenv("RESTIC_PASSWORD")
+	k := util.FindAndOpenKey()
 
-	keyPath := findFirstKey(repoPath)
-	k, err := key.OpenFromFile(keyPath, repoPass)
-	checkErr(err)
+	dataDir := filepath.Join(util.RepoPath, "data")
 
-	id := "8f46d6a57410e8a32675b1aa30b90118e0dc7d08afcc654426b5e00f3d817c02"
-	idPre := id[:2]
+	packWalker := func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() {
+			return nil
+		}
+		listPackBlobs(path, info, k)
+		return nil
+	}
 
-	h, err := os.Open(filepath.Join(repoPath, "data", idPre, id))
-	checkErr(err)
+	err := filepath.Walk(dataDir, packWalker)
+	util.CheckErr(err)
+}
 
-	s, err := h.Stat()
-	checkErr(err)
+// List pack blobs and some of their attributes
+func listPackBlobs(path string, info os.FileInfo, k *key.Key) {
+	handle, err := os.Open(path)
+	util.CheckErr(err)
+	blobs, err := pack.List(k.Master, handle, info.Size())
+	util.CheckErr(err)
 
-	blobs, err := pack.List(k.Master, h, s.Size())
-	checkErr(err)
-
+	fmt.Println("Pack file: ", path)
+	fmt.Println("  Size: ", humanize.Bytes(uint64(info.Size())))
+	fmt.Println("  Blobs: ", len(blobs))
 	for _, blob := range blobs {
 		// Describe blob and print content
-		fmt.Println("Type: " + blob.Type.String())
-		fmt.Println("ID: " + string(blob.ID.String()))
-		buf := make([]byte, blob.Length)
-		h.Read(buf)
-		v, _ := blob.Decrypt(h, k.Master)
-		fmt.Println("Content:\n" + string(v))
-	}
-}
-
-// Find first encryption key in the repository
-func findFirstKey(repoPath string) string {
-	fi, err := ioutil.ReadDir(filepath.Join(repoPath, "keys"))
-	checkErr(err)
-
-	for _, file := range fi {
-		return filepath.Join(repoPath, "keys", file.Name())
-	}
-	return ""
-}
-
-func checkErr(err error) {
-	if err != nil {
-		panic(err)
+		fmt.Printf(
+			"    %s: %s (%s)\n",
+			blob.Type.String(),
+			blob.ID.String(),
+			humanize.Bytes(uint64(blob.Length)),
+		)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/rubiojr/rapi/crypto"
 	"github.com/rubiojr/rapi/restic"
@@ -160,4 +161,17 @@ func (blob *Blob) DecryptAndCheck(reader io.ReaderAt, key *crypto.Key, check boo
 // Does not check content validity.
 func (blob *Blob) Decrypt(reader io.ReaderAt, key *crypto.Key) ([]byte, error) {
 	return blob.DecryptAndCheck(reader, key, false)
+}
+
+// DecryptAndCheck decrypts the blob contents.
+//
+// Does not check content validity.
+func (blob *Blob) DecryptFromPack(path string, key *crypto.Key) ([]byte, error) {
+	pack, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer pack.Close()
+
+	return blob.DecryptAndCheck(pack, key, false)
 }
