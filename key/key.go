@@ -32,6 +32,7 @@ func OpenFromFile(file, password string) (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
 
 	k, err := Open(f, "test")
 	return k, err
