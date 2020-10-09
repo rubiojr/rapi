@@ -2,7 +2,15 @@
 
 I'm trying to learn how [restic](https://github.com/restic/restic) works, and this repository relates my journey.
 
+## Target audience
+
 This is not a user's guide, [the official documentation](https://restic.readthedocs.io/en/latest/010_introduction.html) is quite good at it.
+
+This guide is for those of you willing to contribute to restic eventually, build tooling to augment restic’s ecosystem, or self-serve if something terrible happens with your data, empowering you to create the necessary tooling to troubleshot/fix/workaround things.
+
+## The guide
+
+The guide only covers core restic operations. Things like the virtual filesystem, remote repository backends, the cache and some other things were intentionally left out. I may include then in a future advanced restic internal's guide.
 
 [0. Intro](/docs/intro.md)
 
@@ -21,8 +29,6 @@ This is not a user's guide, [the official documentation](https://restic.readthed
 [7. File Chunking](/docs/chunking.md) TODO
 
 [8. Recommended Reading](/docs/reading.md)
-
-The guide only covers core restic operations. Things like the virtual filesystem, remote repository backends, the cache and some other things were intentionally left out. I may include then in a future advanced restic internal's guide.
 
 **Note:** this **unofficial** guide is a **work in progress**, from a random guy who's never contributed to restic before. You should take all this with a grain of salt until it's been reviewed by a few more eyes and this note is removed.
 
