@@ -1,18 +1,18 @@
 # Blobs
 
-In the [pack files chapter](/docs/packfiles.md), we learned that pack files will have [one or more tree or data encrypted blobs](https://restic.readthedocs.io/en/latest/100_references.html#pack-format) that will contain information about our filesystem (tree blobs) or raw data (data blobs) from our backed up files.
-Each backed up file will result in one or more data blobs added to one of these pack files, that we can read and decrypt to access the original content.
+In the [pack files chapter](/docs/packfiles.md), we learned that pack files have [one or more tree or data encrypted blobs](https://restic.readthedocs.io/en/latest/100_references.html#pack-format) that contain information about our filesystem (tree blobs) or raw data (data blobs) from our backed up files.
+Each backed up file will result in one or more tree blobs and one or more data blobs added to one of these pack files, that we can later read and decrypt to access the original content.
 
-It was demonstrated how we can backup a big MP3 file and use some code to list the blobs in the pack files added to the restic repository, then restore that mp3 using the low level `restic cat` sub-command.
+It was demonstrated how we can backup a big MP3 file and use some code to list the blobs in the pack files added to the restic repository, then restore that MP3 using the low level `restic cat` sub-command.
 
-From the previous chapter also, we discovered that blob `0480151d0705d3a9741ee904d5b2219ef465b03ccd33bf77097e28eec9ae1b69` was the tree blob that has the information about our MP3 file.
-When the `Monplaisir_-_04_-_Stage_1_Level_24.mp3` was backed up, restic split the file in 7 different [variable length blobs](https://restic.readthedocs.io/en/latest/100_references.html#backups-and-deduplication), encrypted them and added them to different pack files:
+We also discovered that blob `0480151d0705d3a9741ee904d5b2219ef465b03ccd33bf77097e28eec9ae1b69` was the tree blob that had the information about our MP3 file.
+When the `Monplaisir_-_04_-_Stage_1_Level_24.mp3` was backed up, restic split the file in 7 different [variable length data blobs](https://restic.readthedocs.io/en/latest/100_references.html#backups-and-deduplication), encrypted them and added them to different pack files:
 
 ```
 restic cat blob 0480151d0705d3a9741ee904d5b2219ef465b03ccd33bf77097e28eec9ae1b69 | jq
 ```
 
-was used to print the MP3 tree blob that contains all the information required to reconstruct the original file from those 7 blobs:
+was used to print the MP3 tree blob that contains all the information required to reconstruct the original file:
 
 ```json
 {
@@ -54,7 +54,7 @@ restic cat blob 0480151d0705d3a9741ee904d5b2219ef465b03ccd33bf77097e28eec9ae1b69
        xargs -I{} restic cat blob {} >> /tmp/restored.mp3
 ```
 
-We'll now do the same but using [our own code](/examples/blobs.go):
+We'll now do the same, but using [our own code](/examples/blobs.go):
 
 ```
 go run examples/blobs.go 0480151d0705d3a9741ee904d5b2219ef465b03ccd33bf77097e28eec9ae1b69
@@ -72,7 +72,7 @@ Orinal MP3 SHA256:   01d4bac715e7cc70193fdf70db3c5022d0dd5f33dacd6d4a07a27472584
 File was restored successfully!
 ```
 
-Given that we know from the [pack files chapter](/docs/packfiles.md) that `0480151d0705d3a9741ee904d5b2219ef465b03ccd33bf77097e28eec9ae1b69` is the tree blob ID that contains the MP3 file metadata, that'll be enough information to retrieve and decrypt all the data blobs that form the MP3 file content.
+Given that we know from the [pack files chapter](/docs/packfiles.md) that `0480151d0705d3a9741ee904d5b2219ef465b03ccd33bf77097e28eec9ae1b69` is the tree blob ID that contains the MP3 file metadata, that'll be enough information to read and decrypt all the data blobs that form the MP3 file content.
 
 First, we want to index all the blobs in every pack file available in the repository. We need to find 7 different data blobs stored in different pack files, so the index will speed things up. Much more complex indexing is also part of restic's source code, we'll talk about that in [the index chapter](/docs/index.md).
 
@@ -84,7 +84,7 @@ First, we want to index all the blobs in every pack file available in the reposi
 
 For simplicity, we're using a map to store the blob ID as a key and the pack ID where it's been stored as the value.
 
-`indexBlobs` simply walks the filesystem and for every pack file found, lists the blobs in that pack file and adds them to our index:
+`indexBlobs` simply walks the filesystem (our repository) and for every pack file found, lists the blobs in that pack file and adds them to our index:
 
 ```go
 // walk restic's repository data dir and index all the pack files found
@@ -115,7 +115,7 @@ func indexBlobsInPack(packID, path string, info os.FileInfo, k *key.Key) {
 }
 ```
 
-Once we have our simple index, we retrieve the pack ID of the pack that contains the MP3 tree blob and load it.
+Once we have our simple index, we can easily retrieve the pack ID of the pack that contains the MP3 tree blob and read it from the pack file.
 
 ```go
 	// Find the pack that contains our mp3 tree blob that describes the
@@ -126,7 +126,7 @@ Once we have our simple index, we retrieve the pack ID of the pack that contains
 	fmt.Printf("MP3 tree blob for %s found and loaded\n", mp3Tree.Nodes[0].Name)
 ```
 
-`loadTreeBlob` reads the tree blob from the pack file and decrypts it's content, so we get the JSON metadata that describes the MP3 file (as shown earlier in this chapter) that is unmarshalled to get a restic.Tree instance:
+`loadTreeBlob` reads the tree blob from the pack file and decrypts its content, to get the JSON metadata that describes the MP3 file (as shown earlier in this chapter). The JSON is then unmarshalled to get a `restic.Tree` instance:
 
 ```go
 // decrypts a tree blob and creates a Tree struct instance
@@ -168,7 +168,7 @@ func fetchBlob(repoPath string, packID, blobID restic.ID, k *key.Key) *blob.Blob
 }
 ```
 
-Once we have the tree blob instance (`mp3Tree`), we have access to the ordered list of data blobs that form the mp3 file, so we can iterate over that list, decrypt every data blob, and write it to the destination file, in order:
+Once we have the tree blob instance (`mp3Tree`), we have access to the ordered list of data blobs that form the mp3 file, so we can iterate over that list, decrypt the data blobs, and write the plaintext to the destination file, in order:
 
 ```go
 	// The restored mp3 file will be saved here
