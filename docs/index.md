@@ -133,3 +133,5 @@ A few important things to keep in mind:
 
 * Indexing strategies: https://github.com/restic/restic/issues/2523
 * Recent index optimizations: https://github.com/restic/restic/pull/2781
+* Rebuilding index while pruning: https://github.com/restic/restic/pull/2842
+* Re-implementing prune: https://github.com/restic/restic/pull/2718
