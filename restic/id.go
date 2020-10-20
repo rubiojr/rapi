@@ -1,9 +1,11 @@
 package restic
 
 import (
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/minio/sha256-simd"
 	"github.com/pkg/errors"
@@ -112,4 +114,15 @@ func (id *ID) UnmarshalJSON(b []byte) error {
 
 func (id *ID) DirectoryPrefix() string {
 	return id.String()[:2]
+}
+
+// NewRandomID returns a randomly generated ID. When reading from rand fails,
+// the function panics.
+func NewRandomID() ID {
+	id := ID{}
+	_, err := io.ReadFull(rand.Reader, id[:])
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
