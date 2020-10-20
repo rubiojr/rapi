@@ -30,7 +30,7 @@ func main() {
 	// Use a map to index all the blobs so we can easily find
 	// which pack contains them later
 	indexBlobs(util.RepoPath, k)
-	fmt.Printf("%d blobs and %d packs found in the repository\n", len(blobIndex), totalPacks)
+	fmt.Printf("\n%d blobs and %d packs found in the repository\n", indexedBlobs, totalPacks)
 }
 
 // walk restic's repository data dir and index all the pack files found
@@ -87,8 +87,11 @@ func progressMonitor() {
 		time.Sleep(1 * time.Second)
 		seconds += 1
 		rate := float64(indexedPacks / seconds)
-		remaining := (float64(totalPacks) / rate) / 3600
+		remaining := (float64(totalPacks-indexedPacks) / rate) / 3600
 		fmt.Printf("\r\033[K")
 		fmt.Printf("%d packs indexed: %.1f packs/s, %.1f hours remaining, %d blobs indexed", indexedPacks, rate, remaining, indexedBlobs)
+		if indexedPacks >= totalPacks {
+			break
+		}
 	}
 }
