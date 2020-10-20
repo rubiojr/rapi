@@ -3,6 +3,7 @@ module github.com/rubiojr/rapi
 go 1.15
 
 require (
+	github.com/dchest/siphash v1.2.2
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elithrar/simple-scrypt v1.3.0
 	github.com/minio/sha256-simd v0.1.1
