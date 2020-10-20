@@ -30,3 +30,7 @@
 ## Blobs
 
 * Restoring file blobs out of order: https://github.com/restic/restic/pull/2195
+
+## Troubleshooting
+
+* Corrupt pack files: https://github.com/restic/restic/issues/2191
