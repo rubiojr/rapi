@@ -1,8 +1,8 @@
 # The Index
 
-Restic's [index files](https://restic.readthedocs.io/en/stable/100_references.html#indexing) contain information about Data and Tree Blobs and the Packs they are contained in and store this information in the repository.
+Restic's [index files](https://restic.readthedocs.io/en/stable/100_references.html#indexing) contain information about data and tree blobs and the packs they are contained in, and store this information in the repository.
 
-Why does Restic need an index?
+The first question we should answer perhaps is: **why does Restic need an index?**
 
 Quoting restic's [souce code comments](https://github.com/restic/restic/pull/3006/files):
 
@@ -10,24 +10,27 @@ Quoting restic's [souce code comments](https://github.com/restic/restic/pull/300
 > and restic needs to store an index entry for each blob in memory for
 > most operations.
 
-The reason for that? you probably guessed it, to speed things up. The purpose of an index is to improve the speed of data retrieval operations.
+With thousands, maybe millions of files to read and analyze, the purpose of an index is to improve the speed of data retrieval operations.
 
-Imagine we have a Restic repository with thousands of [pack files](/docs/packfiles.md) in `data` storing millions of blobs, and we want to restore a singe file that was large enough to be chunked ([a big MP3 for example](/docs/blobs.md)), resulting in several data blobs.
+## A working example
 
-To be able to do that, we'd need to:
+Imagine we have a Restic repository with hundreds of thousands of [pack files](/docs/packfiles.md) in the `data` directory, storing millions of blobs, and we want to restore or read a single file that was large enough to be chunked ([a big MP3 for example](/docs/blobs.md)) when it was backed up, resulting in several data blobs stored in different pack files.
 
-* Walk the `data` directory in our repository and find the pack file that has the tree blob describing our MP3 file.
-* Once we have the tree blob, we have the list of blobs that form our MP3 file. Imagine we need blob A, B and C to restore that MP3 file: we'd need to walk the `data` directory again to find the pack files that contain blobs A, B and C.
+Assuming we only know the file's name, to be able to do that, we'd need to:
 
-As you can imagine, in a remote repository (stored in AWS S3 for example) with 300000 pack files and millions of blobs, this could take hours or even days, as we'd need to use the network to read every [pack file header](https://restic.readthedocs.io/en/stable/100_references.html#pack-format) that contains the information about the blobs stored and do it twice, unless we keep some sort of data structure in memory (or disk) that we can query to figure out in which pack file blobs A, B and C are stored.
+* Walk the `data` directory in our repository and find the pack file that has the tree blob describing our MP3 file, by:
+  * Reading the [pack file header](https://restic.readthedocs.io/en/stable/100_references.html#pack-format) and decrypt it.
+  * Reading each tree blob (if there are any) to check if the file name matches the one we want.
+* Once we have the tree blob, we have the list of blobs that form our MP3 file. Imagine the MP3 file we're looking for is formed by three different blobs: A, B and C (blob IDs will be SHA256 hashes, not simple letters). We'd need to walk the `data` directory again to find the pack files that contain blobs A, B and C.
+
+As you can imagine, in a remote repository (stored in AWS S3 for example) with 300_000 pack files and millions of blobs, this could take hours or even days, as we'd need to use the network to read every [pack file header](https://restic.readthedocs.io/en/stable/100_references.html#pack-format) that contains the information about the blobs stored and do it twice, unless we keep some sort of data structure in memory (or disk) that we can query to figure out in which pack file blobs A, B and C are stored.
 
 To make the process of finding pack file that contains a given blob much faster, Restic builds an index that is persisted to disk.
 
 Let's create a test repository and backup some files to ilustrate this.
 
 ```
-# remove the old test repo if present
-rm -rf /tmp/restic
+./scrtip/init-test-repo
 source examples/creds
 restic init
 restic backup examples/data/hola

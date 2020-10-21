@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+SCRIPT=$(readlink -f "$0")
+BASE_PATH="$(dirname "$SCRIPT")/.."
+rm -rf "$BASE_PATH/tmp/restic"
+source "$BASE_PATH/examples/creds"
+restic init
