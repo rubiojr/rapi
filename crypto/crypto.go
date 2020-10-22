@@ -6,10 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io"
-	"io/ioutil"
 
-	"github.com/pkg/errors"
+	"github.com/rubiojr/rapi/internal/errors"
+
 	"golang.org/x/crypto/poly1305"
 )
 
@@ -362,40 +361,7 @@ func (k *Key) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, error
 	return ret, nil
 }
 
-func (k *Key) Decrypt(reader io.Reader) ([]byte, error) {
-	buf, err := ioutil.ReadAll(reader)
-	if err != nil {
-		return nil, err
-	}
-
-	// decrypt
-	nonce, ciphertext := buf[:k.NonceSize()], buf[k.NonceSize():]
-	plaintext, err := k.Open(ciphertext[:0], nonce, ciphertext, nil)
-	if err != nil {
-		return nil, fmt.Errorf("decryption failed: %v", err)
-	}
-
-	return plaintext, nil
-}
-
 // Valid tests if the key is valid.
 func (k *Key) Valid() bool {
 	return k.EncryptionKey.Valid() && k.MACKey.Valid()
-}
-
-// Encrypt encrypts plaintext data and returns the ciphertext as a byte array
-func (k *Key) Encrypt(data []byte) []byte {
-	nonce := NewRandomNonce()
-
-	ciphertext := make([]byte, 0, ciphertextLength(len(data)))
-	ciphertext = append(ciphertext, nonce...)
-
-	// encrypt blob
-	ciphertext = k.Seal(ciphertext, nonce, data, nil)
-
-	return ciphertext
-}
-
-func ciphertextLength(plaintextSize int) int {
-	return plaintextSize + Extension
 }

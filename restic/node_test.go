@@ -1,14 +1,16 @@
 package restic_test
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
 
 	"github.com/rubiojr/rapi/restic"
-	rtest "github.com/rubiojr/rapi/test"
+	rtest "github.com/rubiojr/rapi/internal/test"
 )
 
 func BenchmarkNodeFillUser(t *testing.B) {
@@ -161,6 +163,62 @@ var nodeTests = []restic.Node{
 		AccessTime: parseTime("2005-05-14 21:07:04.222"),
 		ChangeTime: parseTime("2005-05-14 21:07:05.333"),
 	},
+}
+
+func TestNodeRestoreAt(t *testing.T) {
+	tempdir, err := ioutil.TempDir(rtest.TestTempDir, "restic-test-")
+	rtest.OK(t, err)
+
+	defer func() {
+		if rtest.TestCleanupTempDirs {
+			rtest.RemoveAll(t, tempdir)
+		} else {
+			t.Logf("leaving tempdir at %v", tempdir)
+		}
+	}()
+
+	for _, test := range nodeTests {
+		nodePath := filepath.Join(tempdir, test.Name)
+		rtest.OK(t, test.CreateAt(context.TODO(), nodePath, nil))
+		rtest.OK(t, test.RestoreMetadata(nodePath))
+
+		if test.Type == "symlink" && runtime.GOOS == "windows" {
+			continue
+		}
+		if test.Type == "dir" {
+			rtest.OK(t, test.RestoreTimestamps(nodePath))
+		}
+
+		fi, err := os.Lstat(nodePath)
+		rtest.OK(t, err)
+
+		n2, err := restic.NodeFromFileInfo(nodePath, fi)
+		rtest.OK(t, err)
+
+		rtest.Assert(t, test.Name == n2.Name,
+			"%v: name doesn't match (%v != %v)", test.Type, test.Name, n2.Name)
+		rtest.Assert(t, test.Type == n2.Type,
+			"%v: type doesn't match (%v != %v)", test.Type, test.Type, n2.Type)
+		rtest.Assert(t, test.Size == n2.Size,
+			"%v: size doesn't match (%v != %v)", test.Size, test.Size, n2.Size)
+
+		if runtime.GOOS != "windows" {
+			rtest.Assert(t, test.UID == n2.UID,
+				"%v: UID doesn't match (%v != %v)", test.Type, test.UID, n2.UID)
+			rtest.Assert(t, test.GID == n2.GID,
+				"%v: GID doesn't match (%v != %v)", test.Type, test.GID, n2.GID)
+			if test.Type != "symlink" {
+				// On OpenBSD only root can set sticky bit (see sticky(8)).
+				if runtime.GOOS != "openbsd" && runtime.GOOS != "netbsd" && test.Name == "testSticky" {
+					rtest.Assert(t, test.Mode == n2.Mode,
+						"%v: mode doesn't match (0%o != 0%o)", test.Type, test.Mode, n2.Mode)
+				}
+			}
+		}
+
+		AssertFsTimeEqual(t, "AccessTime", test.Type, test.AccessTime, n2.AccessTime)
+		AssertFsTimeEqual(t, "ModTime", test.Type, test.ModTime, n2.ModTime)
+	}
 }
 
 func AssertFsTimeEqual(t *testing.T, label string, nodeType string, t1 time.Time, t2 time.Time) {

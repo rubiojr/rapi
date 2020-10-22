@@ -20,7 +20,7 @@ func main() {
 	util.CheckErr(err)
 
 	// decrypt the file using restic's repository master key, print it to stdout
-	text, err := k.Master.Decrypt(h)
+	text, err := k.Decrypt(h)
 	util.CheckErr(err)
 	fmt.Println(string(text))
 }

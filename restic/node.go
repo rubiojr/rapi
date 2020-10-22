@@ -1,6 +1,7 @@
 package restic
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,11 +11,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rubiojr/rapi/internal/errors"
+
 	"bytes"
 	"runtime"
 
-	"github.com/pkg/errors"
-	"github.com/rubiojr/rapi/fs"
+	"github.com/rubiojr/rapi/internal/debug"
+	"github.com/rubiojr/rapi/internal/fs"
 )
 
 // ExtendedAttribute is a tuple storing the xattr name and value.
@@ -131,12 +134,50 @@ func (node Node) GetExtendedAttribute(a string) []byte {
 	return nil
 }
 
+// CreateAt creates the node at the given path but does NOT restore node meta data.
+func (node *Node) CreateAt(ctx context.Context, path string, repo Repository) error {
+	debug.Log("create node %v at %v", node.Name, path)
+
+	switch node.Type {
+	case "dir":
+		if err := node.createDirAt(path); err != nil {
+			return err
+		}
+	case "file":
+		if err := node.createFileAt(ctx, path, repo); err != nil {
+			return err
+		}
+	case "symlink":
+		if err := node.createSymlinkAt(path); err != nil {
+			return err
+		}
+	case "dev":
+		if err := node.createDevAt(path); err != nil {
+			return err
+		}
+	case "chardev":
+		if err := node.createCharDevAt(path); err != nil {
+			return err
+		}
+	case "fifo":
+		if err := node.createFifoAt(path); err != nil {
+			return err
+		}
+	case "socket":
+		return nil
+	default:
+		return errors.Errorf("filetype %q not implemented!\n", node.Type)
+	}
+
+	return nil
+}
+
 // RestoreMetadata restores node metadata
 func (node Node) RestoreMetadata(path string) error {
 	err := node.restoreMetadata(path)
-	//if err != nil {
-	//	debug.Log("restoreMetadata(%s) error %v", path, err)
-	//}
+	if err != nil {
+		debug.Log("restoreMetadata(%s) error %v", path, err)
+	}
 
 	return err
 }
@@ -149,12 +190,12 @@ func (node Node) restoreMetadata(path string) error {
 		// if we run as root.
 		// On Windows, Geteuid always returns -1, and we always report lchown
 		// permission errors.
-		//if os.Geteuid() > 0 && os.IsPermission(err) {
-		//	//debug.Log("not running as root, ignoring lchown permission error for %v: %v",
-		//		path, err)
-		//} else {
-		firsterr = errors.Wrap(err, "Lchown")
-		//}
+		if os.Geteuid() > 0 && os.IsPermission(err) {
+			debug.Log("not running as root, ignoring lchown permission error for %v: %v",
+				path, err)
+		} else {
+			firsterr = errors.Wrap(err, "Lchown")
+		}
 	}
 
 	if node.Type != "symlink" {
@@ -166,14 +207,14 @@ func (node Node) restoreMetadata(path string) error {
 	}
 
 	if err := node.RestoreTimestamps(path); err != nil {
-		//debug.Log("error restoring timestamps for dir %v: %v", path, err)
+		debug.Log("error restoring timestamps for dir %v: %v", path, err)
 		if firsterr != nil {
 			firsterr = err
 		}
 	}
 
 	if err := node.restoreExtendedAttributes(path); err != nil {
-		//debug.Log("error restoring extended attributes for %v: %v", path, err)
+		debug.Log("error restoring extended attributes for %v: %v", path, err)
 		if firsterr != nil {
 			firsterr = err
 		}
@@ -213,6 +254,43 @@ func (node Node) createDirAt(path string) error {
 	err := fs.Mkdir(path, node.Mode)
 	if err != nil && !os.IsExist(err) {
 		return errors.Wrap(err, "Mkdir")
+	}
+
+	return nil
+}
+
+func (node Node) createFileAt(ctx context.Context, path string, repo Repository) error {
+	f, err := fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return errors.Wrap(err, "OpenFile")
+	}
+
+	err = node.writeNodeContent(ctx, repo, f)
+	closeErr := f.Close()
+
+	if err != nil {
+		return err
+	}
+
+	if closeErr != nil {
+		return errors.Wrap(closeErr, "Close")
+	}
+
+	return nil
+}
+
+func (node Node) writeNodeContent(ctx context.Context, repo Repository, f *os.File) error {
+	var buf []byte
+	for _, id := range node.Content {
+		buf, err := repo.LoadBlob(ctx, DataBlob, id, buf)
+		if err != nil {
+			return err
+		}
+
+		_, err = f.Write(buf)
+		if err != nil {
+			return errors.Wrap(err, "Write")
+		}
 	}
 
 	return nil
@@ -401,14 +479,14 @@ func (node Node) sameExtendedAttributes(other Node) bool {
 		v, ok := attributes[attr.Name]
 		if !ok {
 			// extended attribute is not set for node
-			//debug.Log("other node has attribute %v, which is not present in node", attr.Name)
+			debug.Log("other node has attribute %v, which is not present in node", attr.Name)
 			return false
 
 		}
 
 		if !bytes.Equal(v.value, attr.Value) {
 			// attribute has different value
-			//debug.Log("attribute %v has different value", attr.Name)
+			debug.Log("attribute %v has different value", attr.Name)
 			return false
 		}
 
@@ -418,9 +496,9 @@ func (node Node) sameExtendedAttributes(other Node) bool {
 	}
 
 	// check for attributes that are not present in other
-	for _, v := range attributes {
+	for name, v := range attributes {
 		if !v.present {
-			//debug.Log("attribute %v not present in other node", name)
+			debug.Log("attribute %v not present in other node", name)
 			return false
 		}
 	}
@@ -428,43 +506,29 @@ func (node Node) sameExtendedAttributes(other Node) bool {
 	return true
 }
 
-func (node *Node) fillUser(stat statT) error {
-	node.UID = stat.uid()
-	node.GID = stat.gid()
-
-	username, err := lookupUsername(strconv.Itoa(int(stat.uid())))
-	if err != nil {
-		return err
-	}
-
-	group, err := lookupGroup(strconv.Itoa(int(stat.gid())))
-	if err != nil {
-		return err
-	}
-
-	node.User = username
-	node.Group = group
-
-	return nil
+func (node *Node) fillUser(stat statT) {
+	uid, gid := stat.uid(), stat.gid()
+	node.UID, node.GID = uid, gid
+	node.User = lookupUsername(uid)
+	node.Group = lookupGroup(gid)
 }
 
 var (
-	uidLookupCache      = make(map[string]string)
+	uidLookupCache      = make(map[uint32]string)
 	uidLookupCacheMutex = sync.RWMutex{}
 )
 
-func lookupUsername(uid string) (string, error) {
+// Cached user name lookup by uid. Returns "" when no name can be found.
+func lookupUsername(uid uint32) string {
 	uidLookupCacheMutex.RLock()
-	value, ok := uidLookupCache[uid]
+	username, ok := uidLookupCache[uid]
 	uidLookupCacheMutex.RUnlock()
 
 	if ok {
-		return value, nil
+		return username
 	}
 
-	username := ""
-
-	u, err := user.LookupId(uid)
+	u, err := user.LookupId(strconv.Itoa(int(uid)))
 	if err == nil {
 		username = u.Username
 	}
@@ -473,26 +537,25 @@ func lookupUsername(uid string) (string, error) {
 	uidLookupCache[uid] = username
 	uidLookupCacheMutex.Unlock()
 
-	return username, nil
+	return username
 }
 
 var (
-	gidLookupCache      = make(map[string]string)
+	gidLookupCache      = make(map[uint32]string)
 	gidLookupCacheMutex = sync.RWMutex{}
 )
 
-func lookupGroup(gid string) (string, error) {
+// Cached group name lookup by gid. Returns "" when no name can be found.
+func lookupGroup(gid uint32) string {
 	gidLookupCacheMutex.RLock()
-	value, ok := gidLookupCache[gid]
+	group, ok := gidLookupCache[gid]
 	gidLookupCacheMutex.RUnlock()
 
 	if ok {
-		return value, nil
+		return group
 	}
 
-	group := ""
-
-	g, err := user.LookupGroupId(gid)
+	g, err := user.LookupGroupId(strconv.Itoa(int(gid)))
 	if err == nil {
 		group = g.Name
 	}
@@ -501,7 +564,7 @@ func lookupGroup(gid string) (string, error) {
 	gidLookupCache[gid] = group
 	gidLookupCacheMutex.Unlock()
 
-	return group, nil
+	return group
 }
 
 func (node *Node) fillExtra(path string, fi os.FileInfo) error {
@@ -519,11 +582,7 @@ func (node *Node) fillExtra(path string, fi os.FileInfo) error {
 
 	node.fillTimes(stat)
 
-	var err error
-
-	if err = node.fillUser(stat); err != nil {
-		return err
-	}
+	node.fillUser(stat)
 
 	switch node.Type {
 	case "file":
@@ -531,6 +590,7 @@ func (node *Node) fillExtra(path string, fi os.FileInfo) error {
 		node.Links = uint64(stat.nlink())
 	case "dir":
 	case "symlink":
+		var err error
 		node.LinkTarget, err = fs.Readlink(path)
 		node.Links = uint64(stat.nlink())
 		if err != nil {
@@ -548,7 +608,7 @@ func (node *Node) fillExtra(path string, fi os.FileInfo) error {
 		return errors.Errorf("invalid node type %q", node.Type)
 	}
 
-	if err = node.fillExtendedAttributes(path); err != nil {
+	if err := node.fillExtendedAttributes(path); err != nil {
 		return err
 	}
 
@@ -561,7 +621,7 @@ func (node *Node) fillExtendedAttributes(path string) error {
 	}
 
 	xattrs, err := Listxattr(path)
-	//debug.Log("fillExtendedAttributes(%v) %v %v", path, xattrs, err)
+	debug.Log("fillExtendedAttributes(%v) %v %v", path, xattrs, err)
 	if err != nil {
 		return err
 	}

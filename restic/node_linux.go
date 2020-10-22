@@ -6,8 +6,9 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/pkg/errors"
-	"github.com/rubiojr/rapi/fs"
+	"github.com/rubiojr/rapi/internal/errors"
+
+	"github.com/rubiojr/rapi/internal/fs"
 )
 
 func (node Node) restoreSymlinkTimestamps(path string, utimes [2]syscall.Timespec) error {

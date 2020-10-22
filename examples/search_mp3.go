@@ -10,8 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rubiojr/rapi/blob"
-	"github.com/rubiojr/rapi/key"
+	"github.com/rubiojr/rapi/crypto"
 	"github.com/rubiojr/rapi/pack"
 	"github.com/rubiojr/rapi/restic"
 
@@ -20,7 +19,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run blobs.go <blob-id>")
+		fmt.Println("Usage: go run blobs.go <filename>")
 		os.Exit(1)
 	}
 	fileName := os.Args[1]
@@ -37,7 +36,7 @@ func main() {
 }
 
 // walk restic's repository data dir and index all the pack files found
-func locateTreeBlobFor(fileName, repoPath string, k *key.Key) *restic.Tree {
+func locateTreeBlobFor(fileName, repoPath string, k *crypto.Key) *restic.Tree {
 	dataDir := filepath.Join(repoPath, "data")
 	var treeBlob *restic.Tree
 	finderFunc := func(path string, info os.FileInfo, err error) error {
@@ -61,15 +60,15 @@ func locateTreeBlobFor(fileName, repoPath string, k *key.Key) *restic.Tree {
 }
 
 // Add all the blob IDs found in a pack to the index map
-func analyzePack(wanted, packID, path string, info os.FileInfo, k *key.Key) *restic.Tree {
+func analyzePack(wanted, packID, path string, info os.FileInfo, k *crypto.Key) *restic.Tree {
 	handle, err := os.Open(path)
 	util.CheckErr(err)
 	defer handle.Close()
-	blobs, err := pack.List(k.Master, handle, info.Size())
+	blobs, err := pack.List(k, handle, info.Size())
 	util.CheckErr(err)
 
 	for _, b := range blobs {
-		if b.Type != blob.TreeBlob {
+		if b.Type != restic.TreeBlob {
 			continue
 		}
 		pid, err := restic.ParseID(packID)
@@ -84,15 +83,15 @@ func analyzePack(wanted, packID, path string, info os.FileInfo, k *key.Key) *res
 }
 
 // Decrypts the blob content
-func blobContent(packPath string, blob *blob.Blob, k *key.Key) []byte {
-	v, err := blob.DecryptFromPack(packPath, k.Master)
+func blobContent(packPath string, blob *restic.PackedBlob, k *crypto.Key) []byte {
+	v, err := blob.DecryptFromPack(packPath, k)
 	util.CheckErr(err)
 
 	return v
 }
 
 // decrypts a tree blob and creates a Tree struct instance
-func loadTreeBlob(packPath string, packID, treeBlobID restic.ID, k *key.Key) *restic.Tree {
+func loadTreeBlob(packPath string, packID, treeBlobID restic.ID, k *crypto.Key) *restic.Tree {
 	found := fetchBlob(packPath, packID, treeBlobID, k)
 	bc := blobContent(packPath, found, k)
 	tree := &restic.Tree{}
@@ -102,7 +101,7 @@ func loadTreeBlob(packPath string, packID, treeBlobID restic.ID, k *key.Key) *re
 	return tree
 }
 
-func fetchBlob(packPath string, packID, blobID restic.ID, k *key.Key) *blob.Blob {
+func fetchBlob(packPath string, packID, blobID restic.ID, k *crypto.Key) *restic.PackedBlob {
 	handle, err := os.Open(packPath)
 	util.CheckErr(err)
 	defer handle.Close()
@@ -110,13 +109,13 @@ func fetchBlob(packPath string, packID, blobID restic.ID, k *key.Key) *blob.Blob
 	info, err := os.Stat(packPath)
 	util.CheckErr(err)
 
-	blobs, err := pack.List(k.Master, handle, info.Size())
+	blobs, err := pack.List(k, handle, info.Size())
 	util.CheckErr(err)
 
 	for _, blob := range blobs {
 		if blob.ID.Equal(blobID) {
-			blob.PackID = packID
-			return &blob
+			pb := restic.PackedBlob{Blob: blob, PackID: packID}
+			return &pb
 		}
 	}
 

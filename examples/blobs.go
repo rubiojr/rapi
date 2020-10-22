@@ -8,8 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rubiojr/rapi/blob"
-	"github.com/rubiojr/rapi/key"
+	"github.com/rubiojr/rapi/crypto"
 	"github.com/rubiojr/rapi/pack"
 	"github.com/rubiojr/rapi/restic"
 
@@ -73,7 +72,7 @@ func main() {
 }
 
 // walk restic's repository data dir and index all the pack files found
-func indexBlobs(repoPath string, k *key.Key) {
+func indexBlobs(repoPath string, k *crypto.Key) {
 	dataDir := filepath.Join(repoPath, "data")
 	indexerFunc := func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
@@ -88,11 +87,11 @@ func indexBlobs(repoPath string, k *key.Key) {
 }
 
 // Add all the blob IDs found in a pack to the index map
-func indexBlobsInPack(packID, path string, info os.FileInfo, k *key.Key) {
+func indexBlobsInPack(packID, path string, info os.FileInfo, k *crypto.Key) {
 	handle, err := os.Open(path)
 	util.CheckErr(err)
 	defer handle.Close()
-	blobs, err := pack.List(k.Master, handle, info.Size())
+	blobs, err := pack.List(k, handle, info.Size())
 
 	for _, blob := range blobs {
 		blobIndex[blob.ID] = packID
@@ -100,7 +99,7 @@ func indexBlobsInPack(packID, path string, info os.FileInfo, k *key.Key) {
 }
 
 // decrypts a tree blob and creates a Tree struct instance
-func loadTreeBlob(repoPath string, packID, treeBlobID restic.ID, k *key.Key) *restic.Tree {
+func loadTreeBlob(repoPath string, packID, treeBlobID restic.ID, k *crypto.Key) *restic.Tree {
 	found := fetchBlob(repoPath, packID, treeBlobID, k)
 	bc := blobContent(repoPath, found, k)
 	tree := &restic.Tree{}
@@ -110,8 +109,8 @@ func loadTreeBlob(repoPath string, packID, treeBlobID restic.ID, k *key.Key) *re
 	return tree
 }
 
-// returns an encrypted blob.Blob instance from a pack
-func fetchBlob(repoPath string, packID, blobID restic.ID, k *key.Key) *blob.Blob {
+// returns an encrypted restic.Blob instance from a pack
+func fetchBlob(repoPath string, packID, blobID restic.ID, k *crypto.Key) *restic.PackedBlob {
 	fullPath := filepath.Join(repoPath, "data", packID.DirectoryPrefix(), packID.String())
 	handle, err := os.Open(fullPath)
 	util.CheckErr(err)
@@ -120,13 +119,13 @@ func fetchBlob(repoPath string, packID, blobID restic.ID, k *key.Key) *blob.Blob
 	info, err := os.Stat(fullPath)
 	util.CheckErr(err)
 
-	blobs, err := pack.List(k.Master, handle, info.Size())
+	blobs, err := pack.List(k, handle, info.Size())
 	util.CheckErr(err)
 
 	for _, blob := range blobs {
 		if blob.ID.Equal(blobID) {
-			blob.PackID = packID
-			return &blob
+			pb := restic.PackedBlob{Blob: blob, PackID: packID}
+			return &pb
 		}
 	}
 
@@ -134,9 +133,9 @@ func fetchBlob(repoPath string, packID, blobID restic.ID, k *key.Key) *blob.Blob
 }
 
 // Decrypts the blob content
-func blobContent(repoPath string, blob *blob.Blob, k *key.Key) []byte {
+func blobContent(repoPath string, blob *restic.PackedBlob, k *crypto.Key) []byte {
 	packPath := filepath.Join(repoPath, "data", blob.PackID.DirectoryPrefix(), blob.PackID.String())
-	v, err := blob.DecryptFromPack(packPath, k.Master)
+	v, err := blob.DecryptFromPack(packPath, k)
 	util.CheckErr(err)
 
 	return v

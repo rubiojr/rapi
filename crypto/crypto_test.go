@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/rubiojr/rapi/crypto"
-	rtest "github.com/rubiojr/rapi/test"
+	rtest "github.com/rubiojr/rapi/internal/test"
 
 	"github.com/restic/chunker"
 )
