@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 
 	"github.com/rubiojr/rapi/examples/util"
 )
@@ -36,15 +35,4 @@ func main() {
 	util.CheckErr(err)
 	defer outf.Close()
 	outf.Write(ciphertext)
-}
-
-// Find first encryption key in the repository
-func findFirstKey(repoPath string) string {
-	fi, err := ioutil.ReadDir(filepath.Join(repoPath, "keys"))
-	util.CheckErr(err)
-
-	for _, file := range fi {
-		return filepath.Join(repoPath, "keys", file.Name())
-	}
-	return ""
 }
