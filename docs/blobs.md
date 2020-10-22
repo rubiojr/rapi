@@ -88,7 +88,7 @@ For simplicity, we're using a map to store the blob ID as a key and the pack ID 
 
 ```go
 // walk restic's repository data dir and index all the pack files found
-func indexBlobs(repoPath string, k *key.Key) {
+func indexBlobs(repoPath string, k *crypto.Key) {
 	dataDir := filepath.Join(repoPath, "data")
 	indexerFunc := func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
@@ -100,14 +100,13 @@ func indexBlobs(repoPath string, k *key.Key) {
 	}
 	err := filepath.Walk(dataDir, indexerFunc)
 	util.CheckErr(err)
-}
 
 // Add all the blob IDs found in a pack to the index map
-func indexBlobsInPack(packID, path string, info os.FileInfo, k *key.Key) {
+func indexBlobsInPack(packID, path string, info os.FileInfo, k *crypto.Key) {
 	handle, err := os.Open(path)
-  util.CheckErr(err)
-  defer handle.Close()
-	blobs, err := pack.List(k.Master, handle, info.Size())
+	util.CheckErr(err)
+	defer handle.Close()
+	blobs, err := pack.List(k, handle, info.Size())
 
 	for _, blob := range blobs {
 		blobIndex[blob.ID] = packID
@@ -130,12 +129,12 @@ Once we have our simple index, we can easily retrieve the pack ID of the pack th
 
 ```go
 // decrypts a tree blob and creates a Tree struct instance
-func loadTreeBlob(repoPath string, packID, treeBlobID restic.ID, k *key.Key) *restic.Tree {
+func loadTreeBlob(repoPath string, packID, treeBlobID restic.ID, k *crypto.Key) *restic.Tree {
 	found := fetchBlob(repoPath, packID, treeBlobID, k)
 	bc := blobContent(repoPath, found, k)
 	tree := &restic.Tree{}
 	err := json.Unmarshal(bc, tree)
-  util.CheckErr(err)
+	util.CheckErr(err)
 
 	return tree
 }
@@ -144,8 +143,8 @@ func loadTreeBlob(repoPath string, packID, treeBlobID restic.ID, k *key.Key) *re
 `fetchBlob` simply reads the encrypted blob from the pack file, so we can decrypt it later.
 
 ```go
-// returns an encrypted blob.Blob instance from a pack
-func fetchBlob(repoPath string, packID, blobID restic.ID, k *key.Key) *blob.Blob {
+// returns an encrypted restic.Blob instance from a pack
+func fetchBlob(repoPath string, packID, blobID restic.ID, k *crypto.Key) *restic.PackedBlob {
 	fullPath := filepath.Join(repoPath, "data", packID.DirectoryPrefix(), packID.String())
 	handle, err := os.Open(fullPath)
 	util.CheckErr(err)
@@ -154,13 +153,13 @@ func fetchBlob(repoPath string, packID, blobID restic.ID, k *key.Key) *blob.Blob
 	info, err := os.Stat(fullPath)
 	util.CheckErr(err)
 
-	blobs, err := pack.List(k.Master, handle, info.Size())
+	blobs, err := pack.List(k, handle, info.Size())
 	util.CheckErr(err)
 
 	for _, blob := range blobs {
 		if blob.ID.Equal(blobID) {
-			blob.PackID = packID
-			return &blob
+			pb := restic.PackedBlob{Blob: blob, PackID: packID}
+			return &pb
 		}
 	}
 
@@ -174,9 +173,11 @@ Once we have the tree blob instance (`mp3Tree`), we have access to the ordered l
 	// The restored mp3 file will be saved here
 	restoredF := "/tmp/restored-mp3.mp3"
 	restoredMP3, err := os.Create(restoredF)
-  util.CheckErr(err)
-  defer restoredMP3.Close()
+	util.CheckErr(err)
+	defer restoredMP3.Close()
 
+	// Find all the data blobs that from the mp3 file, decrypt them and write
+	// them to the destination file
 	for _, cBlob := range mp3Tree.Nodes[0].Content {
 		p := blobIndex[cBlob]
 		packID, err := restic.ParseID(p)

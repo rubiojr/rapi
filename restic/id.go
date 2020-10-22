@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/rubiojr/rapi/internal/errors"
+
 	"github.com/minio/sha256-simd"
-	"github.com/pkg/errors"
 )
 
-const shortStr = 4
+// Hash returns the ID for data.
+func Hash(data []byte) ID {
+	return sha256.Sum256(data)
+}
 
 // idSize contains the size of an ID, in bytes.
 const idSize = sha256.Size
@@ -37,10 +41,22 @@ func ParseID(s string) (ID, error) {
 	return id, nil
 }
 
-// Hash returns the ID for data.
-func Hash(data []byte) ID {
-	return sha256.Sum256(data)
+func (id ID) String() string {
+	return hex.EncodeToString(id[:])
 }
+
+// NewRandomID returns a randomly generated ID. When reading from rand fails,
+// the function panics.
+func NewRandomID() ID {
+	id := ID{}
+	_, err := io.ReadFull(rand.Reader, id[:])
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+const shortStr = 4
 
 // Str returns the shortened string version of id.
 func (id *ID) Str() string {
@@ -62,13 +78,22 @@ func (id ID) IsNull() bool {
 	return id == nullID
 }
 
-func (id ID) String() string {
-	return hex.EncodeToString(id[:])
-}
-
 // Equal compares an ID to another other.
 func (id ID) Equal(other ID) bool {
 	return id == other
+}
+
+// EqualString compares this ID to another one, given as a string.
+func (id ID) EqualString(other string) (bool, error) {
+	s, err := hex.DecodeString(other)
+	if err != nil {
+		return false, errors.Wrap(err, "hex.DecodeString")
+	}
+
+	id2 := ID{}
+	copy(id2[:], s)
+
+	return id == id2, nil
 }
 
 // MarshalJSON returns the JSON encoding of id.
@@ -112,17 +137,12 @@ func (id *ID) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (id *ID) DirectoryPrefix() string {
-	return id.String()[:2]
-}
-
-// NewRandomID returns a randomly generated ID. When reading from rand fails,
-// the function panics.
-func NewRandomID() ID {
-	id := ID{}
-	_, err := io.ReadFull(rand.Reader, id[:])
-	if err != nil {
-		panic(err)
+// IDFromHash returns the ID for the hash.
+func IDFromHash(hash []byte) (id ID) {
+	if len(hash) != idSize {
+		panic("invalid hash type, not enough/too many bytes")
 	}
+
+	copy(id[:], hash)
 	return id
 }

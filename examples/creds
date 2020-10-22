@@ -1,2 +1,4 @@
-export RESTIC_REPOSITORY=/tmp/restic
+SCRIPT=$(readlink -f "$0")
+BASE_PATH="$(dirname "$SCRIPT")/.."
+export RESTIC_REPOSITORY=$BASE_PATH/tmp/restic
 export RESTIC_PASSWORD=test

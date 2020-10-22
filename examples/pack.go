@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/dustin/go-humanize"
+	"github.com/rubiojr/rapi/crypto"
 	"github.com/rubiojr/rapi/examples/util"
-	"github.com/rubiojr/rapi/key"
 	"github.com/rubiojr/rapi/pack"
 )
 
@@ -29,10 +29,10 @@ func main() {
 }
 
 // List pack blobs and some of their attributes
-func listPackBlobs(path string, info os.FileInfo, k *key.Key) {
+func listPackBlobs(path string, info os.FileInfo, k *crypto.Key) {
 	handle, err := os.Open(path)
 	util.CheckErr(err)
-	blobs, err := pack.List(k.Master, handle, info.Size())
+	blobs, err := pack.List(k, handle, info.Size())
 	util.CheckErr(err)
 
 	fmt.Println("Pack file: ", path)

@@ -8,7 +8,7 @@ package restic
 import (
 	"syscall"
 
-	"github.com/pkg/errors"
+	"github.com/rubiojr/rapi/internal/errors"
 
 	"github.com/pkg/xattr"
 )

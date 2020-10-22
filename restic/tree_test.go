@@ -1,14 +1,16 @@
 package restic_test
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/rubiojr/rapi/repository"
 	"github.com/rubiojr/rapi/restic"
-	rtest "github.com/rubiojr/rapi/test"
+	rtest "github.com/rubiojr/rapi/internal/test"
 )
 
 var testFiles = []struct {
@@ -89,4 +91,25 @@ func TestNodeComparison(t *testing.T) {
 
 	n2.Size--
 	rtest.Assert(t, !node.Equals(n2), "nodes are equal")
+}
+
+func TestLoadTree(t *testing.T) {
+	repo, cleanup := repository.TestRepository(t)
+	defer cleanup()
+
+	// save tree
+	tree := restic.NewTree()
+	id, err := repo.SaveTree(context.TODO(), tree)
+	rtest.OK(t, err)
+
+	// save packs
+	rtest.OK(t, repo.Flush(context.Background()))
+
+	// load tree again
+	tree2, err := repo.LoadTree(context.TODO(), id)
+	rtest.OK(t, err)
+
+	rtest.Assert(t, tree.Equals(tree2),
+		"trees are not equal: want %v, got %v",
+		tree, tree2)
 }

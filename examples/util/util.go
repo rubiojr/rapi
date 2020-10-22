@@ -5,7 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rubiojr/rapi/key"
+	"github.com/rubiojr/rapi"
+	"github.com/rubiojr/rapi/crypto"
 )
 
 var RepoPath = os.Getenv("RESTIC_REPOSITORY")
@@ -15,11 +16,10 @@ const MP3SHA256 = "01d4bac715e7cc70193fdf70db3c5022d0dd5f33dacd6d4a07a2747258416
 
 // Find the first key listed available in restic's repository and open it so
 // we can use it to encrypt/decrypt files
-func FindAndOpenKey() *key.Key {
-	keyPath := findFirstRepositoryKey(RepoPath)
-	k, err := key.OpenFromFile(keyPath, RepoPass)
+func FindAndOpenKey() *crypto.Key {
+	repo, err := rapi.OpenRepository(rapi.ResticOptions{})
 	CheckErr(err)
-	return k
+	return repo.Key()
 }
 
 func findFirstRepositoryKey(repoPath string) string {

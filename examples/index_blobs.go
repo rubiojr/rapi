@@ -12,15 +12,14 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/rubiojr/rapi/blob"
-	"github.com/rubiojr/rapi/key"
+	"github.com/rubiojr/rapi/crypto"
 	"github.com/rubiojr/rapi/pack"
 	"github.com/rubiojr/rapi/restic"
 
 	"github.com/rubiojr/rapi/examples/util"
 )
 
-var blobIndex = map[restic.ID]*blob.Blob{}
+var blobIndex = map[restic.ID]*restic.PackedBlob{}
 var indexedPacks = 0
 var indexedBlobs = 0
 var totalPacks = 0
@@ -34,7 +33,7 @@ func main() {
 }
 
 // walk restic's repository data dir and index all the pack files found
-func indexBlobs(repoPath string, k *key.Key) {
+func indexBlobs(repoPath string, k *crypto.Key) {
 	dataDir := filepath.Join(repoPath, "data")
 	indexerFunc := func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
@@ -49,18 +48,18 @@ func indexBlobs(repoPath string, k *key.Key) {
 }
 
 // Add all the blob IDs found in a pack to the index map
-func indexBlobsInPack(packID, path string, info os.FileInfo, k *key.Key) {
+func indexBlobsInPack(packID, path string, info os.FileInfo, k *crypto.Key) {
 	handle, err := os.Open(path)
 	util.CheckErr(err)
 	defer handle.Close()
-	blobs, err := pack.List(k.Master, handle, info.Size())
+	blobs, err := pack.List(k, handle, info.Size())
 	util.CheckErr(err)
 
 	for _, blob := range blobs {
 		pid, err := restic.ParseID(packID)
 		util.CheckErr(err)
-		blob.PackID = pid
-		blobIndex[blob.ID] = &blob
+		pb := restic.PackedBlob{Blob: blob, PackID: pid}
+		blobIndex[blob.ID] = &pb
 		indexedBlobs += 1
 	}
 	indexedPacks += 1

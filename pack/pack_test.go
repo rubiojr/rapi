@@ -2,6 +2,7 @@ package pack_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -9,13 +10,11 @@ import (
 	"io"
 	"testing"
 
-	//"github.com/restic/restic/internal/backend/mem"
-
-	"github.com/rubiojr/rapi/blob"
+	"github.com/rubiojr/rapi/backend/mem"
 	"github.com/rubiojr/rapi/crypto"
 	"github.com/rubiojr/rapi/pack"
 	"github.com/rubiojr/rapi/restic"
-	rtest "github.com/rubiojr/rapi/test"
+	rtest "github.com/rubiojr/rapi/internal/test"
 )
 
 var testLens = []int{23, 31650, 25860, 10928, 13769, 19862, 5211, 127, 13690, 30231}
@@ -39,7 +38,7 @@ func newPack(t testing.TB, k *crypto.Key, lengths []int) ([]Buf, []byte, uint) {
 	// pack blobs
 	p := pack.NewPacker(k, new(bytes.Buffer))
 	for _, b := range bufs {
-		p.Add(blob.TreeBlob, b.id, b.data)
+		p.Add(restic.TreeBlob, b.id, b.data)
 	}
 
 	_, err := p.Finalize()
@@ -57,7 +56,7 @@ func verifyBlobs(t testing.TB, bufs []Buf, k *crypto.Key, rd io.ReaderAt, packSi
 	// header length
 	written += binary.Size(uint32(0))
 	// header + header crypto
-	headerSize := len(bufs) * (binary.Size(blob.BlobType(0)) + binary.Size(uint32(0)) + len(restic.ID{}))
+	headerSize := len(bufs) * (binary.Size(restic.BlobType(0)) + binary.Size(uint32(0)) + len(restic.ID{}))
 	written += restic.CiphertextLength(headerSize)
 
 	// check length
@@ -96,11 +95,11 @@ func TestCreatePack(t *testing.T) {
 }
 
 var blobTypeJSON = []struct {
-	t   blob.BlobType
+	t   restic.BlobType
 	res string
 }{
-	{blob.DataBlob, `"data"`},
-	{blob.TreeBlob, `"tree"`},
+	{restic.DataBlob, `"data"`},
+	{restic.TreeBlob, `"tree"`},
 }
 
 func TestBlobTypeJSON(t *testing.T) {
@@ -111,14 +110,13 @@ func TestBlobTypeJSON(t *testing.T) {
 		rtest.Equals(t, test.res, string(buf))
 
 		// test unserialize
-		var v blob.BlobType
+		var v restic.BlobType
 		err = json.Unmarshal([]byte(test.res), &v)
 		rtest.OK(t, err)
 		rtest.Equals(t, test.t, v)
 	}
 }
 
-/*
 func TestUnpackReadSeeker(t *testing.T) {
 	// create random keys
 	k := crypto.NewRandomKey()
@@ -130,11 +128,9 @@ func TestUnpackReadSeeker(t *testing.T) {
 
 	handle := restic.Handle{Type: restic.PackFile, Name: id.String()}
 	rtest.OK(t, b.Save(context.TODO(), handle, restic.NewByteReader(packData)))
-	verifyBlobs(t, bufs, k, restic.ReaderAt(b, handle), packSize)
+	verifyBlobs(t, bufs, k, restic.ReaderAt(context.TODO(), b, handle), packSize)
 }
-*/
 
-/*
 func TestShortPack(t *testing.T) {
 	k := crypto.NewRandomKey()
 
@@ -145,5 +141,5 @@ func TestShortPack(t *testing.T) {
 
 	handle := restic.Handle{Type: restic.PackFile, Name: id.String()}
 	rtest.OK(t, b.Save(context.TODO(), handle, restic.NewByteReader(packData)))
-	verifyBlobs(t, bufs, k, restic.ReaderAt(b, handle), packSize)
-}*/
+	verifyBlobs(t, bufs, k, restic.ReaderAt(context.TODO(), b, handle), packSize)
+}

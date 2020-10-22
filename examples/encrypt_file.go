@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 
 	"github.com/rubiojr/rapi/examples/util"
-	"github.com/rubiojr/rapi/key"
 )
 
 func main() {
@@ -19,11 +17,8 @@ func main() {
 
 	// our sample repo in /tmp/restic will only have one key, let's
 	// find it and use it
-	keyPath := findFirstKey(util.RepoPath)
-	k, err := key.OpenFromFile(keyPath, util.RepoPass)
-	util.CheckErr(err)
+	k := util.FindAndOpenKey()
 
-	//
 	h, err := os.Open(in)
 	defer h.Close()
 	util.CheckErr(err)
@@ -33,22 +28,11 @@ func main() {
 	util.CheckErr(err)
 
 	// Encrypt the file using restic's repository master key
-	ciphertext := k.Master.Encrypt(plain)
+	ciphertext := k.Encrypt(plain)
 
 	// Write the resulting ciphertext to the target file
 	outf, err := os.Create(out)
 	util.CheckErr(err)
 	defer outf.Close()
 	outf.Write(ciphertext)
-}
-
-// Find first encryption key in the repository
-func findFirstKey(repoPath string) string {
-	fi, err := ioutil.ReadDir(filepath.Join(repoPath, "keys"))
-	util.CheckErr(err)
-
-	for _, file := range fi {
-		return filepath.Join(repoPath, "keys", file.Name())
-	}
-	return ""
 }

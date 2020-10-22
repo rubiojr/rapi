@@ -7,8 +7,8 @@ import (
 	"io"
 	"sync"
 
-	"github.com/pkg/errors"
-	"github.com/rubiojr/rapi/blob"
+	"github.com/rubiojr/rapi/internal/debug"
+	"github.com/rubiojr/rapi/internal/errors"
 	"github.com/rubiojr/rapi/restic"
 
 	"github.com/rubiojr/rapi/crypto"
@@ -16,7 +16,7 @@ import (
 
 // Packer is used to create a new Pack.
 type Packer struct {
-	blobs []blob.Blob
+	blobs []restic.Blob
 
 	bytes uint
 	k     *crypto.Key
@@ -32,11 +32,11 @@ func NewPacker(k *crypto.Key, wr io.Writer) *Packer {
 
 // Add saves the data read from rd as a new blob to the packer. Returned is the
 // number of bytes written to the pack.
-func (p *Packer) Add(t blob.BlobType, id restic.ID, data []byte) (int, error) {
+func (p *Packer) Add(t restic.BlobType, id restic.ID, data []byte) (int, error) {
 	p.m.Lock()
 	defer p.m.Unlock()
 
-	c := blob.Blob{Type: t, ID: id}
+	c := restic.Blob{Type: t, ID: id}
 
 	n, err := p.wr.Write(data)
 	c.Length = uint(n)
@@ -47,7 +47,7 @@ func (p *Packer) Add(t blob.BlobType, id restic.ID, data []byte) (int, error) {
 	return n, errors.Wrap(err, "Write")
 }
 
-var entrySize = uint(binary.Size(blob.BlobType(0)) + binary.Size(uint32(0)) + len(restic.ID{}))
+var entrySize = uint(binary.Size(restic.BlobType(0)) + binary.Size(uint32(0)) + len(restic.ID{}))
 
 // headerEntry is used with encoding/binary to read and write header entries
 type headerEntry struct {
@@ -108,9 +108,9 @@ func (p *Packer) writeHeader(wr io.Writer) (bytesWritten uint, err error) {
 		}
 
 		switch b.Type {
-		case blob.DataBlob:
+		case restic.DataBlob:
 			entry.Type = 0
-		case blob.TreeBlob:
+		case restic.TreeBlob:
 			entry.Type = 1
 		default:
 			return 0, errors.Errorf("invalid blob type %v", b.Type)
@@ -144,7 +144,7 @@ func (p *Packer) Count() int {
 }
 
 // Blobs returns the slice of blobs that have been written.
-func (p *Packer) Blobs() []blob.Blob {
+func (p *Packer) Blobs() []restic.Blob {
 	p.m.Lock()
 	defer p.m.Unlock()
 
@@ -161,13 +161,16 @@ func (p *Packer) String() string {
 }
 
 var (
-	// size of the header-length field at the end of the file
-	headerLengthSize = binary.Size(uint32(0))
 	// we require at least one entry in the header, and one blob for a pack file
 	minFileSize = entrySize + crypto.Extension + uint(headerLengthSize)
 )
 
 const (
+	// size of the header-length field at the end of the file; it is a uint32
+	headerLengthSize = 4
+	// constant overhead of the header independent of #entries
+	HeaderSize = headerLengthSize + crypto.Extension
+
 	maxHeaderSize = 16 * 1024 * 1024
 	// number of header enries to download as part of header-length request
 	eagerEntries = 15
@@ -195,6 +198,7 @@ func readRecords(rd io.ReaderAt, size int64, max int) ([]byte, int, error) {
 
 	hlen := binary.LittleEndian.Uint32(b[len(b)-headerLengthSize:])
 	b = b[:len(b)-headerLengthSize]
+	debug.Log("header length: %v", hlen)
 
 	var err error
 	switch {
@@ -225,6 +229,7 @@ func readRecords(rd io.ReaderAt, size int64, max int) ([]byte, int, error) {
 // readHeader reads the header at the end of rd. size is the length of the
 // whole data accessible in rd.
 func readHeader(rd io.ReaderAt, size int64) ([]byte, error) {
+	debug.Log("size: %v", size)
 	if size < int64(minFileSize) {
 		err := InvalidFileError{Message: "file is too small"}
 		return nil, errors.Wrap(err, "readHeader")
@@ -259,7 +264,7 @@ func (e InvalidFileError) Error() string {
 }
 
 // List returns the list of entries found in a pack file.
-func List(k *crypto.Key, rd io.ReaderAt, size int64) (entries []blob.Blob, err error) {
+func List(k *crypto.Key, rd io.ReaderAt, size int64) (entries []restic.Blob, err error) {
 	buf, err := readHeader(rd, size)
 	if err != nil {
 		return nil, err
@@ -277,7 +282,7 @@ func List(k *crypto.Key, rd io.ReaderAt, size int64) (entries []blob.Blob, err e
 
 	hdrRd := bytes.NewReader(buf)
 
-	entries = make([]blob.Blob, 0, uint(len(buf))/entrySize)
+	entries = make([]restic.Blob, 0, uint(len(buf))/entrySize)
 
 	pos := uint(0)
 	for {
@@ -291,7 +296,7 @@ func List(k *crypto.Key, rd io.ReaderAt, size int64) (entries []blob.Blob, err e
 			return nil, errors.Wrap(err, "binary.Read")
 		}
 
-		entry := blob.Blob{
+		entry := restic.Blob{
 			Length: uint(e.Length),
 			ID:     e.ID,
 			Offset: pos,
@@ -299,9 +304,9 @@ func List(k *crypto.Key, rd io.ReaderAt, size int64) (entries []blob.Blob, err e
 
 		switch e.Type {
 		case 0:
-			entry.Type = blob.DataBlob
+			entry.Type = restic.DataBlob
 		case 1:
-			entry.Type = blob.TreeBlob
+			entry.Type = restic.TreeBlob
 		default:
 			return nil, errors.Errorf("invalid type %d", e.Type)
 		}
@@ -312,4 +317,9 @@ func List(k *crypto.Key, rd io.ReaderAt, size int64) (entries []blob.Blob, err e
 	}
 
 	return entries, nil
+}
+
+// PackedSizeOfBlob returns the size a blob actually uses when saved in a pack
+func PackedSizeOfBlob(blobLength uint) uint {
+	return blobLength + entrySize
 }
