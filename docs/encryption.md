@@ -43,50 +43,23 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
-	"github.com/rubiojr/rapi/key"
+	"github.com/rubiojr/rapi/examples/util"
 )
 
 func main() {
-	// get restic repository path and password from the environment
-	repoPath := os.Getenv("RESTIC_REPOSITORY")
-	repoPass := os.Getenv("RESTIC_PASSWORD")
+	k := util.FindAndOpenKey()
 
-	// our sample repo in /tmp/restic will only have one key, let's
-	// find it and use it
-	keyPath := findFirstKey(repoPath)
-	k, err := key.OpenFromFile(keyPath, repoPass)
-	checkErr(err)
+	// open repository config file
+	h, err := os.Open(filepath.Join(util.RepoPath, "config"))
+	util.CheckErr(err)
 
-	// open /tmp/restic/config file
-	h, err := os.Open(filepath.Join(repoPath, "config"))
-	checkErr(err)
-
-	// decrypt the repo configuration using the master key,
-  // print it to stdout
-	text, err := k.Master.Decrypt(h)
-	checkErr(err)
+	// decrypt the repo configuration, print it to stdout
+	text, err := k.Decrypt(h)
+	util.CheckErr(err)
 	fmt.Println(string(text))
-}
-
-// Find first encryption key in the repository
-func findFirstKey(repoPath string) string {
-	fi, err := ioutil.ReadDir(filepath.Join(repoPath, "keys"))
-	checkErr(err)
-
-	for _, file := range fi {
-		return filepath.Join(repoPath, "keys", file.Name())
-	}
-	return ""
-}
-
-func checkErr(err error) {
-	if err != nil {
-		panic(err)
-	}
 }
 ```
 
@@ -113,10 +86,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 
 	"github.com/rubiojr/rapi/examples/util"
-	"github.com/rubiojr/rapi/key"
 )
 
 func main() {
@@ -128,11 +99,8 @@ func main() {
 
 	// our sample repo in /tmp/restic will only have one key, let's
 	// find it and use it
-	keyPath := findFirstKey(util.RepoPath)
-	k, err := key.OpenFromFile(keyPath, util.RepoPass)
-	util.CheckErr(err)
+	k := util.FindAndOpenKey()
 
-	//
 	h, err := os.Open(in)
 	defer h.Close()
 	util.CheckErr(err)
@@ -142,24 +110,13 @@ func main() {
 	util.CheckErr(err)
 
 	// Encrypt the file using restic's repository master key
-	ciphertext := k.Master.Encrypt(plain)
+	ciphertext := k.Encrypt(plain)
 
 	// Write the resulting ciphertext to the target file
 	outf, err := os.Create(out)
 	util.CheckErr(err)
 	defer outf.Close()
 	outf.Write(ciphertext)
-}
-
-// Find first encryption key in the repository
-func findFirstKey(repoPath string) string {
-	fi, err := ioutil.ReadDir(filepath.Join(repoPath, "keys"))
-	util.CheckErr(err)
-
-	for _, file := range fi {
-		return filepath.Join(repoPath, "keys", file.Name())
-	}
-	return ""
 }
 ```
 

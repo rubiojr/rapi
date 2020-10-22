@@ -12,7 +12,7 @@ Quoting restic's [souce code comments](https://github.com/restic/restic/pull/300
 
 With thousands, maybe millions of files to read and analyze, the purpose of an index is to improve the speed of data retrieval operations.
 
-## A working example
+## A working example [TODO]
 
 Imagine we have a Restic repository with hundreds of thousands of [pack files](/docs/packfiles.md) in the `data` directory, storing millions of blobs, and we want to restore or read a single file that was large enough to be chunked ([a big MP3 for example](/docs/blobs.md)) when it was backed up, resulting in several data blobs stored in different pack files.
 
