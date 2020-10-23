@@ -6,9 +6,15 @@ Extra tools to manage Restic repositories, mostly intended for restic developers
 
 ## Installing the tools
 
+### From source
+
 ```
-go get -u github.com/rubiojr/cmd/rapi/...
+GO111MODULE=on go get github.com/rubiojr/rapi/cmd/rapi@latest
 ```
+
+### Binaries
+
+No binaries available for the moment.
 
 ## Available tools
 
