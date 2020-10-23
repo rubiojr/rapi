@@ -30,7 +30,7 @@ Prints basic repository information.
 
 Prints restic's repository ID.
 
-![](images/repository-info.png)
+![](images/repository-id.png)
 
 ## snapshots
 
