@@ -32,7 +32,9 @@ The guide only covers core restic operations. Things like the virtual filesystem
 
 [7. File Chunking](/docs/chunking.md) TODO
 
-[8. Recommended Reading](/docs/reading.md)
+[8. Deduplication](/docs/deduplication.md) TODO
+
+[9. Recommended Reading](/docs/reading.md)
 
 **Note:** this **unofficial** guide is a **work in progress**, from a random guy who's never contributed to restic before. You should take all this with a grain of salt until it's been reviewed by a few more eyes and this note is removed.
 
