@@ -20,15 +20,22 @@ No binaries available for the moment.
 
 ## repository
 
-### info
+    rapi repository info
 
-Pretty prints basic repository information.
+Prints basic repository information.
 
 ![](images/repository-info.png)
 
-### id
-
-prints restic's repository ID.
-
     rapi repository id
 
+Prints restic's repository ID.
+
+![](images/repository-info.png)
+
+## snapshots
+
+    rapi snapshot info
+
+Prints basic snapshot information retrieved from the latest available snapshot.
+
+![](images/snapshot-info.png)
