@@ -17,12 +17,16 @@ require (
 	github.com/kurin/blazer v0.5.3
 	github.com/minio/minio-go/v6 v6.0.57
 	github.com/minio/sha256-simd v0.1.1
+	github.com/muesli/reflow v0.2.0
+	github.com/muesli/termenv v0.7.4
 	github.com/ncw/swift v1.0.52
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.12.0
 	github.com/pkg/xattr v0.4.1
 	github.com/restic/chunker v0.4.0
 	github.com/restic/restic v0.10.0
+	github.com/sirupsen/logrus v1.5.0
+	github.com/urfave/cli/v2 v2.2.0
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	golang.org/x/net v0.0.0-20200904194848-62affa334b73
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43

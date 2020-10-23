@@ -69,7 +69,7 @@ type ResticOptions struct {
 	LimitDownloadKb int
 
 	ctx      context.Context
-	password string
+	Password string
 	stdout   io.Writer
 	stderr   io.Writer
 
@@ -87,9 +87,10 @@ type ResticOptions struct {
 	extended options.Options
 }
 
-var globalOptions = ResticOptions{
+var DefaultOptions = ResticOptions{
 	stdout: os.Stdout,
 	stderr: os.Stderr,
+	ctx:    context.Background(),
 }
 
 var isReadingPassword bool
@@ -140,7 +141,7 @@ func ClearLine() string {
 
 // Printf writes the message to the configured stdout stream.
 func Printf(format string, args ...interface{}) {
-	_, err := fmt.Fprintf(globalOptions.stdout, format, args...)
+	_, err := fmt.Fprintf(DefaultOptions.stdout, format, args...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to write to stdout: %v\n", err)
 	}
@@ -148,7 +149,7 @@ func Printf(format string, args ...interface{}) {
 
 // Print writes the message to the configured stdout stream.
 func Print(args ...interface{}) {
-	_, err := fmt.Fprint(globalOptions.stdout, args...)
+	_, err := fmt.Fprint(DefaultOptions.stdout, args...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to write to stdout: %v\n", err)
 	}
@@ -156,7 +157,7 @@ func Print(args ...interface{}) {
 
 // Println writes the message to the configured stdout stream.
 func Println(args ...interface{}) {
-	_, err := fmt.Fprintln(globalOptions.stdout, args...)
+	_, err := fmt.Fprintln(DefaultOptions.stdout, args...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to write to stdout: %v\n", err)
 	}
@@ -164,14 +165,14 @@ func Println(args ...interface{}) {
 
 // Verbosef calls Printf to write the message when the verbose flag is set.
 func Verbosef(format string, args ...interface{}) {
-	if globalOptions.verbosity >= 1 {
+	if DefaultOptions.verbosity >= 1 {
 		Printf(format, args...)
 	}
 }
 
 // Verboseff calls Printf to write the message when the verbosity is >= 2
 func Verboseff(format string, args ...interface{}) {
-	if globalOptions.verbosity >= 2 {
+	if DefaultOptions.verbosity >= 2 {
 		Printf(format, args...)
 	}
 }
@@ -203,7 +204,7 @@ func PrintProgress(format string, args ...interface{}) {
 
 // Warnf writes the message to the configured stderr stream.
 func Warnf(format string, args ...interface{}) {
-	_, err := fmt.Fprintf(globalOptions.stderr, format, args...)
+	_, err := fmt.Fprintf(DefaultOptions.stderr, format, args...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to write to stderr: %v\n", err)
 	}
@@ -281,8 +282,8 @@ func readPasswordTerminal(in *os.File, out io.Writer, prompt string) (password s
 // ReadPassword reads the password from a password file, the environment
 // variable RESTIC_PASSWORD or prompts the user.
 func ReadPassword(opts ResticOptions, prompt string) (string, error) {
-	if opts.password != "" {
-		return opts.password, nil
+	if opts.Password != "" {
+		return opts.Password, nil
 	}
 
 	var (
@@ -364,7 +365,6 @@ const maxKeys = 20
 
 // OpenRepository reads the password and opens the repository.
 func OpenRepository(opts ResticOptions) (*repository.Repository, error) {
-	opts.ctx = context.Background()
 	repo, err := ReadRepo(opts)
 	if err != nil {
 		return nil, err
@@ -393,29 +393,29 @@ func OpenRepository(opts ResticOptions) (*repository.Repository, error) {
 	}
 
 	if pwd != "" {
-		opts.password = pwd
+		opts.Password = pwd
 	}
 
 	s := repository.New(be)
 
 	passwordTriesLeft := 1
-	if stdinIsTerminal() && opts.password == "" {
+	if stdinIsTerminal() && opts.Password == "" {
 		passwordTriesLeft = 3
 	}
 
 	for ; passwordTriesLeft > 0; passwordTriesLeft-- {
-		opts.password, err = ReadPassword(opts, "enter password for repository: ")
+		opts.Password, err = ReadPassword(opts, "enter password for repository: ")
 		if err != nil && passwordTriesLeft > 1 {
-			opts.password = ""
+			opts.Password = ""
 			fmt.Printf("%s. Try again\n", err)
 		}
 		if err != nil {
 			continue
 		}
 
-		err = s.SearchKey(opts.ctx, opts.password, maxKeys, opts.KeyHint)
+		err = s.SearchKey(opts.ctx, opts.Password, maxKeys, opts.KeyHint)
 		if err != nil && passwordTriesLeft > 1 {
-			opts.password = ""
+			opts.Password = ""
 			fmt.Printf("%s. Try again\n", err)
 		}
 	}
@@ -634,8 +634,8 @@ func open(s string, gopts ResticOptions, opts options.Options) (restic.Backend, 
 	}
 
 	tropts := backend.TransportOptions{
-		RootCertFilenames:        globalOptions.CACerts,
-		TLSClientCertKeyFilename: globalOptions.TLSClientCert,
+		RootCertFilenames:        DefaultOptions.CACerts,
+		TLSClientCertKeyFilename: DefaultOptions.TLSClientCert,
 	}
 	rt, err := backend.Transport(tropts)
 	if err != nil {
@@ -664,7 +664,7 @@ func open(s string, gopts ResticOptions, opts options.Options) (restic.Backend, 
 	case "swift":
 		be, err = swift.Open(cfg.(swift.Config), rt)
 	case "b2":
-		be, err = b2.Open(globalOptions.ctx, cfg.(b2.Config), rt)
+		be, err = b2.Open(DefaultOptions.ctx, cfg.(b2.Config), rt)
 	case "rest":
 		be, err = rest.Open(cfg.(rest.Config), rt)
 	case "rclone":
@@ -679,7 +679,7 @@ func open(s string, gopts ResticOptions, opts options.Options) (restic.Backend, 
 	}
 
 	// check if config is there
-	fi, err := be.Stat(globalOptions.ctx, restic.Handle{Type: restic.ConfigFile})
+	fi, err := be.Stat(DefaultOptions.ctx, restic.Handle{Type: restic.ConfigFile})
 	if err != nil {
 		return nil, errors.Fatalf("unable to open config file: %v\nIs there a repository at the following location?\n%v", err, location.StripPassword(s))
 	}
@@ -705,8 +705,8 @@ func create(s string, opts options.Options) (restic.Backend, error) {
 	}
 
 	tropts := backend.TransportOptions{
-		RootCertFilenames:        globalOptions.CACerts,
-		TLSClientCertKeyFilename: globalOptions.TLSClientCert,
+		RootCertFilenames:        DefaultOptions.CACerts,
+		TLSClientCertKeyFilename: DefaultOptions.TLSClientCert,
 	}
 	rt, err := backend.Transport(tropts)
 	if err != nil {
@@ -727,11 +727,11 @@ func create(s string, opts options.Options) (restic.Backend, error) {
 	case "swift":
 		return swift.Open(cfg.(swift.Config), rt)
 	case "b2":
-		return b2.Create(globalOptions.ctx, cfg.(b2.Config), rt)
+		return b2.Create(DefaultOptions.ctx, cfg.(b2.Config), rt)
 	case "rest":
-		return rest.Create(globalOptions.ctx, cfg.(rest.Config), rt)
+		return rest.Create(DefaultOptions.ctx, cfg.(rest.Config), rt)
 	case "rclone":
-		return rclone.Create(globalOptions.ctx, cfg.(rclone.Config))
+		return rclone.Create(DefaultOptions.ctx, cfg.(rclone.Config))
 	}
 
 	debug.Log("invalid repository scheme: %v", s)

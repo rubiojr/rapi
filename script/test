@@ -1,2 +1,2 @@
 #!/bin/sh
-go test $(go list ./...|grep -v examples)
+go test $(go list ./...|grep -E -v "examples|cmd")

@@ -2,6 +2,10 @@
 
 I'm trying to learn how [restic](https://github.com/restic/restic) works, and this repository relates my journey.
 
+## Tooling
+
+This repository also provides some useful tooling for restic repositories. Please see the [tooling documentation](/docs/tooling/README.md).
+
 ## Target audience
 
 This is not a user's guide, [the official documentation](https://restic.readthedocs.io/en/latest/010_introduction.html) is quite good at it.
@@ -34,6 +38,7 @@ The guide only covers core restic operations. Things like the virtual filesystem
 
 I may have introduced new bugs in restic's code while adapting it for this guide. Code or guide reviews and fixes for any errors found are greatly appreciated.
 
+##
 ## Credits
 
 Most of the API code in this repository comes from [restic](https://github.com/restic/restic). I've modified it so it can be used externally (moving code from `internal` to external packages) and added some helper functions that should make it a bit easier to use when dealing with local restic repositories.
