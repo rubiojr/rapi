@@ -22,16 +22,6 @@ func FindAndOpenKey() *crypto.Key {
 	return repo.Key()
 }
 
-func findFirstRepositoryKey(repoPath string) string {
-	fi, err := ioutil.ReadDir(filepath.Join(repoPath, "keys"))
-	CheckErr(err)
-
-	for _, file := range fi {
-		return filepath.Join(repoPath, "keys", file.Name())
-	}
-	return ""
-}
-
 func CheckErr(err error) {
 	if err != nil {
 		panic(err)
