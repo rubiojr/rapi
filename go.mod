@@ -40,7 +40,6 @@ require (
 	github.com/sirupsen/logrus v1.5.0
 	github.com/smartystreets/assertions v1.2.0 // indirect
 	github.com/smartystreets/goconvey v1.6.4 // indirect
-	github.com/tj/go-spin v1.1.0
 	github.com/urfave/cli/v2 v2.2.0
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	golang.org/x/net v0.0.0-20200904194848-62affa334b73
