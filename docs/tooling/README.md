@@ -63,3 +63,6 @@ Given a pattern, restore all matching files to the target directory.
 To restore all files matching `*hello` to `/tmp`:
 
 ![](images/rescue-restore-all-versions.png)
+
+This will walk all the snapshots available in the repository and restore all the files matching the given pattern (glob pattern, not regular expression) to the target directory.
+The file ID (SHA256 sum of the file blobs hashes) is appended to the file name, so if there are multiple versions of the same file, all the versions will be safely restored.
