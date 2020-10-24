@@ -67,7 +67,12 @@ func restoreAllVersions(c *cli.Context) error {
 	}
 
 	s.Stop()
-	fmt.Printf("%d files matched. Restoring to target directory '%s'...\n", len(filesFound), targetDir)
+	fmt.Printf("%d files matched. ", len(filesFound))
+	if len(filesFound) != 0 {
+		fmt.Printf("Restoring to target directory '%s'...\n", targetDir)
+	} else {
+		fmt.Println("Nothing to restore.")
+	}
 
 	for k, v := range filesFound {
 		hash := fmt.Sprintf("%x", k)
