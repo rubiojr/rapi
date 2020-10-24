@@ -18,8 +18,8 @@ import (
 	"github.com/rubiojr/rapi/backend"
 	"github.com/rubiojr/rapi/backend/s3"
 	"github.com/rubiojr/rapi/backend/test"
-	"github.com/rubiojr/rapi/restic"
 	rtest "github.com/rubiojr/rapi/internal/test"
+	"github.com/rubiojr/rapi/restic"
 )
 
 func mkdir(t testing.TB, dir string) {
@@ -193,6 +193,8 @@ func TestBackendMinio(t *testing.T) {
 		}
 	}()
 
+	// FIXME: don't want to run minio tests for now
+	t.Skip()
 	// try to find a minio binary
 	_, err := exec.LookPath("minio")
 	if err != nil {
