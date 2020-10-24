@@ -62,4 +62,4 @@ Given a pattern, restore all matching files to the target directory.
 
 To restore all files matching `*hello` to `/tmp`:
 
-[](images/rescue-restore-all-versions.png)
+![](images/rescue-restore-all-versions.png)
