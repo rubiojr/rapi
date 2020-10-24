@@ -46,4 +46,4 @@ snapshot 7eeaf82d saved
 
 ## Install Go
 
-Any reasonably recent version of Go should work to follow this guide. I've been using Go 1.15.2 to compile the examples.
+I've been using Go >= 1.15 to compile and test the examples.
