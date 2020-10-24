@@ -41,8 +41,6 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-var version = "0.10.0-dev (compiled manually)"
-
 // TimeFormat is the format used for all timestamps printed by restic.
 const TimeFormat = "2006-01-02 15:04:05"
 
@@ -91,23 +89,6 @@ var DefaultOptions = ResticOptions{
 	stdout: os.Stdout,
 	stderr: os.Stderr,
 	ctx:    context.Background(),
-}
-
-var isReadingPassword bool
-
-// checkErrno returns nil when err is set to syscall.Errno(0), since this is no
-// error condition.
-func checkErrno(err error) error {
-	e, ok := err.(syscall.Errno)
-	if !ok {
-		return err
-	}
-
-	if e == 0 {
-		return nil
-	}
-
-	return err
 }
 
 func stdinIsTerminal() bool {
@@ -267,9 +248,7 @@ func readPassword(in io.Reader) (password string, err error) {
 // password.
 func readPasswordTerminal(in *os.File, out io.Writer, prompt string) (password string, err error) {
 	fmt.Fprint(out, prompt)
-	isReadingPassword = true
 	buf, err := terminal.ReadPassword(int(in.Fd()))
-	isReadingPassword = false
 	fmt.Fprintln(out)
 	if err != nil {
 		return "", errors.Wrap(err, "ReadPassword")
@@ -689,53 +668,6 @@ func open(s string, gopts ResticOptions, opts options.Options) (restic.Backend, 
 	}
 
 	return be, nil
-}
-
-// Create the backend specified by URI.
-func create(s string, opts options.Options) (restic.Backend, error) {
-	debug.Log("parsing location %v", s)
-	loc, err := location.Parse(s)
-	if err != nil {
-		return nil, err
-	}
-
-	cfg, err := parseConfig(loc, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	tropts := backend.TransportOptions{
-		RootCertFilenames:        DefaultOptions.CACerts,
-		TLSClientCertKeyFilename: DefaultOptions.TLSClientCert,
-	}
-	rt, err := backend.Transport(tropts)
-	if err != nil {
-		return nil, err
-	}
-
-	switch loc.Scheme {
-	case "local":
-		return local.Create(cfg.(local.Config))
-	case "sftp":
-		return sftp.Create(cfg.(sftp.Config))
-	case "s3":
-		return s3.Create(cfg.(s3.Config), rt)
-	case "gs":
-		return gs.Create(cfg.(gs.Config), rt)
-	case "azure":
-		return azure.Create(cfg.(azure.Config), rt)
-	case "swift":
-		return swift.Open(cfg.(swift.Config), rt)
-	case "b2":
-		return b2.Create(DefaultOptions.ctx, cfg.(b2.Config), rt)
-	case "rest":
-		return rest.Create(DefaultOptions.ctx, cfg.(rest.Config), rt)
-	case "rclone":
-		return rclone.Create(DefaultOptions.ctx, cfg.(rclone.Config))
-	}
-
-	debug.Log("invalid repository scheme: %v", s)
-	return nil, errors.Fatalf("invalid scheme %q", loc.Scheme)
 }
 
 // RunCleanupHandlers runs all registered cleanup handlers
