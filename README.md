@@ -1,5 +1,8 @@
 # Restic by Example
 
+[![CI Status](https://github.com/rubiojr/rapi/workflows/ci/badge.svg)](https://github.com/rubiojr/rapi/actions)
+[![Go ReportCard](http://goreportcard.com/badge/rubiojr/rapi)](http://goreportcard.com/report/rubiojr/rapi)
+
 I'm trying to learn how [restic](https://github.com/restic/restic) works, and this repository relates my journey.
 
 ## Tooling
