@@ -14,7 +14,6 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/dustin/go-humanize"
-	"github.com/minio/sha256-simd"
 	"github.com/rubiojr/rapi/internal/walker"
 	"github.com/rubiojr/rapi/restic"
 	"github.com/urfave/cli/v2"
@@ -128,16 +127,6 @@ func statsWalkTree(repo restic.Repository, stats *statsContainer) walker.WalkFun
 	}
 }
 
-// makeFileIDByContents returns a hash of the blob IDs of the
-// node's Content in sequence.
-func makeFileIDByContents(node *restic.Node) fileID {
-	var bb []byte
-	for _, c := range node.Content {
-		bb = append(bb, []byte(c[:])...)
-	}
-	return sha256.Sum256(bb)
-}
-
 // statsContainer holds information during a walk of a repository
 // to collect information about it, as well as state needed
 // for a successful and efficient walk.
@@ -161,9 +150,6 @@ type statsContainer struct {
 	// independent of references to files
 	blobs restic.BlobSet
 }
-
-// fileID is a 256-bit hash that distinguishes unique files.
-type fileID [32]byte
 
 const (
 	countModeRestoreSize           = "restore-size"
