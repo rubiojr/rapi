@@ -63,11 +63,20 @@ func printSnapshotInfo(c *cli.Context) error {
 		stats.TotalBlobCount++
 	}
 
+	//FIXME: TotalBlobSize is greater than RestoreSize when there are no duplicated files in the
+	// repo. The encryption overhead??
+	var dedupedSize uint64
+	if stats.RestoreSize < stats.TotalBlobSize {
+		dedupedSize = 0
+	} else {
+		dedupedSize = stats.RestoreSize - stats.TotalBlobSize
+	}
+
 	s.Stop()
 	printRow("Total Blob Count", fmt.Sprintf("%d", stats.TotalBlobCount), headerColor)
 	printRow(
 		"Unique Files Size",
-		humanize.Bytes(stats.TotalBlobSize)+fmt.Sprintf(" (deduped %s)", humanize.Bytes(stats.RestoreSize-stats.TotalBlobSize)),
+		humanize.Bytes(stats.TotalBlobSize)+fmt.Sprintf(" (deduped %s)", humanize.Bytes(dedupedSize)),
 		headerColor,
 	)
 	printRow("Total Files", fmt.Sprintf("%d", stats.TotalFileCount), headerColor)
@@ -114,7 +123,9 @@ func statsWalkTree(repo restic.Repository, stats *statsContainer) walker.WalkFun
 			stats.UniqueFileCount++
 		}
 
-		stats.TotalFileCount++
+		if node.Type == "file" {
+			stats.TotalFileCount++
+		}
 
 		// if inodes are present, only count each inode once
 		// (hard links do not increase restore size)
