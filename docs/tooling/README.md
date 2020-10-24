@@ -12,6 +12,14 @@ Extra tools to manage Restic repositories, mostly intended for restic developers
 GO111MODULE=on go get github.com/rubiojr/rapi/cmd/rapi
 ```
 
+Or clone the repository and type:
+
+```
+git clone https://github.com/rubiojr/rapi
+cd rapi
+make
+```
+
 ### Binaries
 
 No binaries available for the moment.
