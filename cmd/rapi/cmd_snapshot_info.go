@@ -54,10 +54,6 @@ func printSnapshotInfo(c *cli.Context) error {
 		return fmt.Errorf("error walking snapshot: %v", err)
 	}
 
-	if err != nil {
-		return err
-	}
-
 	// the blob handles have been collected, but not yet counted
 	for blobHandle := range stats.blobs {
 		blobSize, found := rapiRepo.LookupBlobSize(blobHandle.ID, blobHandle.Type)
