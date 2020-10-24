@@ -3,7 +3,7 @@ module github.com/rubiojr/rapi
 go 1.15
 
 require (
-	bazil.org/fuse v0.0.0-20200524192727-fb710f7dfd05
+	bazil.org/fuse v0.0.0-20200407214033-5883e5a4b512
 	cloud.google.com/go/storage v1.12.0
 	github.com/Azure/azure-sdk-for-go v47.1.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.6 // indirect
