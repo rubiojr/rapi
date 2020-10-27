@@ -25,7 +25,7 @@ func main() {
 				Aliases:     []string{"r"},
 				EnvVars:     []string{"RESTIC_REPOSITORY"},
 				Usage:       "Repository path",
-				Required:    true,
+				Required:    false,
 				Destination: &repoPath,
 			},
 			&cli.StringFlag{
@@ -33,7 +33,7 @@ func main() {
 				Aliases:     []string{"p"},
 				EnvVars:     []string{"RESTIC_PASSWORD"},
 				Usage:       "Repository password",
-				Required:    true,
+				Required:    false,
 				Destination: &globalOptions.Password,
 			},
 			&cli.BoolFlag{
@@ -48,7 +48,9 @@ func main() {
 				log.SetLevel(log.DebugLevel)
 			}
 			globalOptions.Repo = repoPath
-			rapiRepo, err = rapi.OpenRepository(globalOptions)
+			if ctx.NArg() > 0 {
+				rapiRepo, err = rapi.OpenRepository(globalOptions)
+			}
 			return err
 		},
 	}

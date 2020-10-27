@@ -2,7 +2,7 @@
 
 all: rapi
 
-rapi:
+rapi: clean
 	go build -o rapi ./cmd/rapi
 
 clean:
