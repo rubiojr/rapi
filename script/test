@@ -13,4 +13,6 @@ export PATH=./integration/vendor:./integration/vendor/bats/bin:$PATH
 ./script/init-test-repo > /dev/null
 . ./examples/creds
 
-bats -r integration
+if [ "$(uname)" = "Linux" ]; then
+  bats -r integration
+fi
