@@ -43,7 +43,6 @@ The guide only covers core restic operations. Things like the virtual filesystem
 
 I may have introduced new bugs in restic's code while adapting it for this guide. Code or guide reviews and fixes for any errors found are greatly appreciated.
 
-##
 ## Credits
 
 Most of the API code in this repository comes from [restic](https://github.com/restic/restic). I've modified it so it can be used externally (moving code from `internal` to external packages) and added some helper functions that should make it a bit easier to use when dealing with local restic repositories.
