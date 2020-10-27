@@ -720,7 +720,7 @@ func checkConsistentInfo(t testing.TB, file string, fi os.FileInfo, modtime time
 	}
 }
 
-// test inspired from test case https://github.com/rubiojr/rapi/issues/1212
+// test inspired from test case https://github.com/restic/restic/issues/1212
 func TestRestorerConsistentTimestampsAndPermissions(t *testing.T) {
 	timeForTest := time.Date(2019, time.January, 9, 1, 46, 40, 0, time.UTC)
 
