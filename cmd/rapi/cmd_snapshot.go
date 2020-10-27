@@ -18,6 +18,9 @@ func init() {
 				Name:   "info",
 				Action: printSnapshotInfo,
 				Flags:  []cli.Flag{},
+				Before: func(c *cli.Context) error {
+					return setupApp(c)
+				},
 			},
 		},
 	}

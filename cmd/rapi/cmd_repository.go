@@ -19,11 +19,17 @@ func init() {
 				Name:   "id",
 				Action: printID,
 				Flags:  []cli.Flag{},
+				Before: func(c *cli.Context) error {
+					return setupApp(c)
+				},
 			},
 			&cli.Command{
 				Name:   "info",
 				Action: printInfo,
 				Flags:  []cli.Flag{},
+				Before: func(c *cli.Context) error {
+					return setupApp(c)
+				},
 			},
 		},
 	}

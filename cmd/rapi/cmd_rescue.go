@@ -25,6 +25,9 @@ func init() {
 						Required: true,
 					},
 				},
+				Before: func(c *cli.Context) error {
+					return setupApp(c)
+				},
 			},
 		},
 	}

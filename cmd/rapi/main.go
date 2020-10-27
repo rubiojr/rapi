@@ -43,16 +43,6 @@ func main() {
 				Required: false,
 			},
 		},
-		Before: func(ctx *cli.Context) error {
-			if ctx.Bool("debug") {
-				log.SetLevel(log.DebugLevel)
-			}
-			globalOptions.Repo = repoPath
-			if ctx.NArg() > 0 {
-				rapiRepo, err = rapi.OpenRepository(globalOptions)
-			}
-			return err
-		},
 	}
 
 	app.Commands = append(app.Commands, appCommands...)
@@ -60,4 +50,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func setupApp(ctx *cli.Context) error {
+	var err error
+	if ctx.Bool("debug") {
+		log.SetLevel(log.DebugLevel)
+	}
+	globalOptions.Repo = repoPath
+	rapiRepo, err = rapi.OpenRepository(globalOptions)
+	return err
 }

@@ -3,4 +3,23 @@
 export RESTIC_TEST_FUSE=0
 export RESTIC_TEST_CLOUD_BACKENDS=0
 
+if ! which restic > /dev/null; then
+  echo "restic needs to be installed to run the tests"
+  exit 1
+fi
+
+if ! which bats > /dev/null; then
+  echo "bats needs to be installed to run the tests"
+  exit 1
+fi
+
 go test $(go list ./...|grep -E -v "examples|cmd")
+
+echo
+echo "Running integration tests..."
+echo
+
+./script/init-test-repo > /dev/null
+. ./examples/creds
+
+bats -r integration
