@@ -8,5 +8,5 @@ rapi: clean
 clean:
 	rm -f rapi
 
-test:
+test: rapi
 	./script/test
