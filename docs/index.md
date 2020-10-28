@@ -126,14 +126,11 @@ A few important things to keep in mind:
 * Every time we run `backup`, **at least one** new index file is created. [Index files size is kept below 8MiB](https://restic.readthedocs.io/en/stable/100_references.html#indexing), so restic may create more than one index file if we're backing up a very large number of files (a single index file can contain more than 60_000 blob references).
 * Index files are immutable, meaning that once they're written to the repository they'll never be modified, but other Restic commands (like `prune` or `rebuild-index`) may combine/compact/repack them reducing the number of index files required. If we run `restic backup` to backup a small file every day of the year, we'd end up with 365 index files that can easily be repacked into a single file if we run `restic rebuild-index` (bear in mind that `rebuild-index` is very expensive in large repositories).
 
-![](/docs/images/index.gif)
-
-* Lots of small index files: solved by rebuild-index (slow)
-* Missing repack-index (https://github.com/restic/restic/pull/2513)
-
 ## Examples
 
-I've added a naive but simple implementation of what an in memory index using a map would look like to [index_blobs.go](/examples/index_blobs.go), without using Restic's data structures.
+I've added a naive but simple implementation of what an in memory index using a map would look like to [index_blobs.go](/examples/index_blobs.go), without using Restic's data structures:
+
+![](/docs/images/index.gif)
 
 Restic solved this problem with an in-memory index that is persisted (as JSON files) to the disk, plus the necessary abstractions to save, access and cache the index from a number of different backends (S3, Backblaze, local filesystem, etc).
 
