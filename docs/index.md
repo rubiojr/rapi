@@ -132,7 +132,7 @@ I've added a naive but simple implementation of what an in memory index using a 
 
 ![](/docs/images/index.gif)
 
-Restic solved this problem with an in-memory index that is persisted (as JSON files) to the disk, plus the necessary abstractions to save, access and cache the index from a number of different backends (S3, Backblaze, local filesystem, etc).
+Restic solved this problem with an in-memory index that is persisted (as encrypted JSON files) to the disk, plus the necessary abstractions to save, access and cache the index from a number of different backends (S3, Backblaze, local filesystem, etc).
 
 Here's what accessing the index would look like, using Restic's internal API.
 
