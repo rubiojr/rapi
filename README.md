@@ -31,7 +31,7 @@ The guide only covers core restic operations. Things like the virtual filesystem
 
 [5. Blobs](/docs/blobs.md)
 
-[6. The Index](/docs/index.md) STARTED
+[6. The Index](/docs/index.md)
 
 [7. File Chunking](/docs/chunking.md) TODO
 

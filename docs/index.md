@@ -12,11 +12,11 @@ Quoting restic's [souce code comments](https://github.com/restic/restic/pull/300
 
 With thousands, maybe millions of files to read and analyze, the purpose of an index is to improve the speed of data retrieval operations.
 
-## A working example [TODO]
+## Why Restic needs an index
 
-Imagine we have a Restic repository with hundreds of thousands of [pack files](/docs/packfiles.md) in the `data` directory, storing millions of blobs, and we want to restore or read a single file that was large enough to be chunked ([a big MP3 for example](/docs/blobs.md)) when it was backed up, resulting in several data blobs stored in different pack files.
+Imagine we have a repository with hundreds of thousands of [pack files](/docs/packfiles.md) in the `data` directory, storing millions of blobs, and we want to restore or read a single file that was large enough to be chunked ([a big MP3 for example](/docs/blobs.md)) when it was backed up, resulting in several data blobs stored in different pack files.
 
-Assuming we only know the file's name, to be able to do that, we'd need to:
+Assuming we only know the file's name (`my_awesome.mp3`), to be able to find the required data blobs to restore it, we'd need to:
 
 * Walk the `data` directory in our repository and find the pack file that has the tree blob describing our MP3 file, by:
   * Reading the [pack file header](https://restic.readthedocs.io/en/stable/100_references.html#pack-format) and decrypt it.
@@ -27,7 +27,7 @@ As you can imagine, in a remote repository (stored in AWS S3 for example) with 3
 
 To make the process of finding pack file that contains a given blob much faster, Restic builds an index that is persisted to disk.
 
-Let's create a test repository and backup some files to ilustrate this.
+Let's create a test repository and backup some files to illustrate this.
 
 ```
 ./scrtip/init-test-repo
@@ -49,14 +49,14 @@ processed 1 files, 12 B in 0:00
 snapshot 24fcd64d saved
 ```
 
-we'll see that restic has created a new index file:
+we'll see that Restic has created a new index file:
 
 ```
 $ ls /tmp/restic/index
 849b6e4820ba805593af7005d69d41614c95becd3704eabe8e9fd5e0a7b379ae
 ```
 
-We can dump that index file to understand what restic stored in its index:
+We can dump that index file to understand what Restic stored in its index:
 
 ```
 $ restic cat index 849b6e4820ba805593af7005d69d41614c95becd3704eabe8e9fd5e0a7b379ae | jq
@@ -104,7 +104,7 @@ $ restic cat index 849b6e4820ba805593af7005d69d41614c95becd3704eabe8e9fd5e0a7b37
 }
 ```
 
-We can easily see that when we backed up `examples/data/hello`, restic created two pack files (`885eca...` and `ceb0e3...`), three tree blobs (two for the directories and one for the `hello` file) and one data blob (the hello file content). We can list the pack files in the repository to double check this:
+We can easily see that when we backed up `examples/data/hello`, Restic created two pack files (`885eca...` and `ceb0e3...`), three tree blobs (two for the directories and one for the `hello` file) and one data blob (the hello file content). We can list the pack files in the repository to double check this:
 
 ```
 find /tmp/restic/data -type f
@@ -124,12 +124,47 @@ A few important things to keep in mind:
 
 * Restic adds packs and blobs to the index when we run `restic backup`. Given that it needs to walk the filesystem to back things up, it's a good moment to index blobs and pack files created so we can query them later, without having to walk the repository `data/` directory again.
 * Every time we run `backup`, **at least one** new index file is created. [Index files size is kept below 8MiB](https://restic.readthedocs.io/en/stable/100_references.html#indexing), so restic may create more than one index file if we're backing up a very large number of files (a single index file can contain more than 60_000 blob references).
-* Index files are immutable, meaning that once they're written to the repository they'll never be modified, but other restic commands (like `prune` or `rebuild-index`) may cobine/compact/repack them reducing the number of index files required. If we run `restic backup` to backup a small file every day of the year, we'd end up with 365 index files that can easily be repacked into a single file if we run `restic rebuild-index` (bear in mind that `rebuild-index` is very expensive in large repos).
+* Index files are immutable, meaning that once they're written to the repository they'll never be modified, but other Restic commands (like `prune` or `rebuild-index`) may combine/compact/repack them reducing the number of index files required. If we run `restic backup` to backup a small file every day of the year, we'd end up with 365 index files that can easily be repacked into a single file if we run `restic rebuild-index` (bear in mind that `rebuild-index` is very expensive in large repositories).
 
 ![](/docs/images/index.gif)
 
 * Lots of small index files: solved by rebuild-index (slow)
 * Missing repack-index (https://github.com/restic/restic/pull/2513)
+
+## Examples
+
+I've added a naive but simple implementation of what an in memory index using a map would look like to [index_blobs.go](/examples/index_blobs.go), without using Restic's data structures.
+
+Restic solved this problem with an in-memory index that is persisted (as JSON files) to the disk, plus the necessary abstractions to save, access and cache the index from a number of different backends (S3, Backblaze, local filesystem, etc).
+
+Here's what accessing the index would look like, using Restic's internal API.
+
+First we load the index into memory:
+
+```go
+	repo, err := rapi.OpenRepository(rapi.DefaultOptions)
+	util.CheckErr(err)
+	repo.LoadIndex(context.Background())
+	index := repo.Index()
+```
+
+That'll download (if required), cache and read all the index files and return the master index, which is just a collection of all the index files available in the repository.
+
+Once we have it loaded, we can use it to do the things the index was designed for: quickly find available blobs and the pack files where they are contained.
+
+Imagine we know a certain blob ID and we want to figure out the pack file that hosts it:
+
+```go
+dataBlob, _ := restic.ParseID("49bec000d8b727d3c50e8687e71b0a8deb65a84933f6c4dbbe07513ed39919cc")
+found := index.Has(dataBlob, restic.DataBlob)
+fmt.Printf("Is blob 49bec0 available in the index? %t\n", found)
+for _, blob := range index.Lookup(dataBlob, restic.DataBlob) {
+	fmt.Printf("Blob %s found in pack file %s\n", blob.ID, blob.PackID)
+}
+```
+_The full source code for the example can be found in [restic_index.go](/examples/restic_index.go)._
+
+Armed with that information, we can now build tools that perform better when figuring out where blobs are stored is required, even with very large Restic repositories.
 
 ## Related reading
 
