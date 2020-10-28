@@ -13,9 +13,8 @@ Let's create a test repository and backup the mp3 file available in `examples/da
 
 ```
 # remove the old test repo if present
-rm -rf /tmp/restic
+./script/init-restic-repo
 source examples/creds
-restic init
 restic backup examples/data/Monplaisir_-_04_-_Stage_1_Level_24.mp3
 ```
 

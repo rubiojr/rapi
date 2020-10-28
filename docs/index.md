@@ -32,7 +32,6 @@ Let's create a test repository and backup some files to ilustrate this.
 ```
 ./scrtip/init-test-repo
 source examples/creds
-restic init
 restic backup examples/data/hola
 ```
 
