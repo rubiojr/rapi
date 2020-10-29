@@ -13,6 +13,7 @@ fix_paths() {
   gomove -d "$1" github.com/rubiojr/rapi/internal/restic github.com/rubiojr/rapi/restic
   gomove -d "$1" github.com/rubiojr/rapi/internal/backend github.com/rubiojr/rapi/backend
   gomove -d "$1" github.com/rubiojr/rapi/internal/pack github.com/rubiojr/rapi/pack
+  gomove -d "$1" github.com/rubiojr/rapi/internal/walker github.com/rubiojr/rapi/walker
 }
 
 # Sync rapi's public modules
@@ -30,4 +31,5 @@ rm -rf internal/pack
 rm -rf internal/backend
 rm -rf internal/crypto
 rm -rf internal/repository
+rm -rf internal/walker
 fix_paths internal
