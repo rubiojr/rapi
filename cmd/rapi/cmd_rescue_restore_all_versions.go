@@ -16,7 +16,7 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/rubiojr/rapi/internal/filter"
-	"github.com/rubiojr/rapi/internal/walker"
+	"github.com/rubiojr/rapi/walker"
 	"github.com/rubiojr/rapi/restic"
 	"github.com/urfave/cli/v2"
 )

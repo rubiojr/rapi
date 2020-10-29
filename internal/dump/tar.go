@@ -10,7 +10,7 @@ import (
 
 	"github.com/rubiojr/rapi/internal/errors"
 	"github.com/rubiojr/rapi/restic"
-	"github.com/rubiojr/rapi/internal/walker"
+	"github.com/rubiojr/rapi/walker"
 )
 
 // WriteTar will write the contents of the given tree, encoded as a tar to the given destination.

@@ -14,7 +14,7 @@ import (
 
 	"github.com/briandowns/spinner"
 	"github.com/dustin/go-humanize"
-	"github.com/rubiojr/rapi/internal/walker"
+	"github.com/rubiojr/rapi/walker"
 	"github.com/rubiojr/rapi/restic"
 	"github.com/urfave/cli/v2"
 )
