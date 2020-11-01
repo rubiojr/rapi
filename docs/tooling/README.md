@@ -78,3 +78,37 @@ The file ID (SHA256 sum of the file blobs hashes) is appended to the file name, 
 Use cases:
 
 * https://forum.restic.net/t/restore-multiple-file-versions/3196
+
+## cat 
+
+Restic's cat command that does not lock the repository. See https://github.com/restic/restic/issues/2739.
+
+### masterkey
+
+    rapi cat masterkey
+
+Prints master key to stdout.
+
+### blob 
+
+    rapi cat blob <blob ID>
+
+Dumps trees and data blobs to stdout.
+
+### index
+
+    rapi cat index <index ID>
+
+Dumps indices to stdout.
+
+### snapshot 
+
+    rapi cat snapshot <snapshot ID>
+
+Dumps snapshots to stdout.
+
+### config 
+
+    rapi cat config
+
+Dumps repository configuration to stdout.
