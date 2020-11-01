@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/rubiojr/rapi"
@@ -26,7 +27,8 @@ func main() {
 				EnvVars:     []string{"RESTIC_REPOSITORY"},
 				Usage:       "Repository path",
 				Required:    false,
-				Destination: &repoPath,
+				Destination: &globalOptions.Repo,
+				DefaultText: " ",
 			},
 			&cli.StringFlag{
 				Name:        "password",
@@ -48,7 +50,8 @@ func main() {
 	app.Commands = append(app.Commands, appCommands...)
 	err = app.Run(os.Args)
 	if err != nil {
-		log.Fatal(err)
+		println(fmt.Sprintf("\n%v", err))
+		os.Exit(1)
 	}
 }
 
@@ -57,7 +60,6 @@ func setupApp(ctx *cli.Context) error {
 	if ctx.Bool("debug") {
 		log.SetLevel(log.DebugLevel)
 	}
-	globalOptions.Repo = repoPath
 	rapiRepo, err = rapi.OpenRepository(globalOptions)
 	return err
 }
