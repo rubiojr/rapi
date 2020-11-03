@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/rubiojr/rapi/backend"
@@ -36,7 +34,6 @@ import (
 	"github.com/rubiojr/rapi/internal/errors"
 
 	"os/exec"
-	"os/signal"
 
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -189,17 +186,6 @@ func Warnf(format string, args ...interface{}) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "unable to write to stderr: %v\n", err)
 	}
-}
-
-// Exitf uses Warnf to write the message and then terminates the process with
-// the given exit code.
-func Exitf(exitcode int, format string, args ...interface{}) {
-	if !(strings.HasSuffix(format, "\n")) {
-		format += "\n"
-	}
-
-	Warnf(format, args...)
-	Exit(exitcode)
 }
 
 // resolvePassword determines the password to be used for opening the repository.
@@ -668,74 +654,4 @@ func open(s string, gopts ResticOptions, opts options.Options) (restic.Backend, 
 	}
 
 	return be, nil
-}
-
-// RunCleanupHandlers runs all registered cleanup handlers
-func RunCleanupHandlers() {
-	cleanupHandlers.Lock()
-	defer cleanupHandlers.Unlock()
-
-	if cleanupHandlers.done {
-		return
-	}
-	cleanupHandlers.done = true
-
-	for _, f := range cleanupHandlers.list {
-		err := f()
-		if err != nil {
-			Warnf("error in cleanup handler: %v\n", err)
-		}
-	}
-	cleanupHandlers.list = nil
-}
-
-// CleanupHandler handles the SIGINT signals.
-func CleanupHandler(c <-chan os.Signal) {
-	for s := range c {
-		debug.Log("signal %v received, cleaning up", s)
-		Warnf("%ssignal %v received, cleaning up\n", ClearLine(), s)
-
-		code := 0
-
-		if s == syscall.SIGINT {
-			code = 130
-		} else {
-			code = 1
-		}
-
-		Exit(code)
-	}
-}
-
-// Exit runs the cleanup handlers and then terminates the process with the
-// given exit code.
-func Exit(code int) {
-	RunCleanupHandlers()
-	os.Exit(code)
-}
-
-var cleanupHandlers struct {
-	sync.Mutex
-	list []func() error
-	done bool
-	ch   chan os.Signal
-}
-
-func init() {
-	cleanupHandlers.ch = make(chan os.Signal, 1)
-	go CleanupHandler(cleanupHandlers.ch)
-	signal.Notify(cleanupHandlers.ch, syscall.SIGINT)
-}
-
-// AddCleanupHandler adds the function f to the list of cleanup handlers so
-// that it is executed when all the cleanup handlers are run, e.g. when SIGINT
-// is received.
-func AddCleanupHandler(f func() error) {
-	cleanupHandlers.Lock()
-	defer cleanupHandlers.Unlock()
-
-	// reset the done flag for integration tests
-	cleanupHandlers.done = false
-
-	cleanupHandlers.list = append(cleanupHandlers.list, f)
 }
