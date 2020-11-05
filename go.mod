@@ -25,6 +25,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/kurin/blazer v0.5.3
 	github.com/minio/minio-go/v6 v6.0.57
+	github.com/minio/minio-go/v7 v7.0.5
 	github.com/minio/sha256-simd v0.1.1
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect

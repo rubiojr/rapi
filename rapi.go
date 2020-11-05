@@ -613,15 +613,15 @@ func open(s string, gopts ResticOptions, opts options.Options) (restic.Backend, 
 
 	switch loc.Scheme {
 	case "local":
-		be, err = local.Open(cfg.(local.Config))
+		be, err = local.Open(gopts.ctx, cfg.(local.Config))
 		// wrap the backend in a LimitBackend so that the throughput is limited
 		be = limiter.LimitBackend(be, lim)
 	case "sftp":
-		be, err = sftp.Open(cfg.(sftp.Config))
+		be, err = sftp.Open(gopts.ctx, cfg.(sftp.Config))
 		// wrap the backend in a LimitBackend so that the throughput is limited
 		be = limiter.LimitBackend(be, lim)
 	case "s3":
-		be, err = s3.Open(cfg.(s3.Config), rt)
+		be, err = s3.Open(gopts.ctx, cfg.(s3.Config), rt)
 	case "gs":
 		be, err = gs.Open(cfg.(gs.Config), rt)
 	case "azure":

@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/rubiojr/rapi/repository"
 	"github.com/rubiojr/rapi/restic"
@@ -207,7 +208,7 @@ func TestRepack(t *testing.T) {
 	repo, cleanup := repository.TestRepository(t)
 	defer cleanup()
 
-	seed := rand.Int63()
+	seed := time.Now().UnixNano()
 	rand.Seed(seed)
 	t.Logf("rand seed is %v", seed)
 
@@ -274,7 +275,7 @@ func TestRepackWrongBlob(t *testing.T) {
 	repo, cleanup := repository.TestRepository(t)
 	defer cleanup()
 
-	seed := rand.Int63()
+	seed := time.Now().UnixNano()
 	rand.Seed(seed)
 	t.Logf("rand seed is %v", seed)
 
@@ -289,5 +290,5 @@ func TestRepackWrongBlob(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected repack to fail but got no error")
 	}
-	t.Log(err)
+	t.Logf("found expected error: %v", err)
 }

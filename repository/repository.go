@@ -272,7 +272,7 @@ func (r *Repository) SaveAndEncrypt(ctx context.Context, t restic.BlobType, data
 	}
 
 	// if the pack is not full enough, put back to the list
-	if packer.Size() < MinPackSize {
+	if packer.Size() < minPackSize {
 		debug.Log("pack is not full enough (%d bytes)", packer.Size())
 		pm.insertPacker(packer)
 		return nil
@@ -844,7 +844,7 @@ type Loader interface {
 
 // DownloadAndHash is all-in-one helper to download content of the file at h to a temporary filesystem location
 // and calculate ID of the contents. Returned (temporary) file is positioned at the beginning of the file;
-// it is reponsibility of the caller to close and delete the file.
+// it is the reponsibility of the caller to close and delete the file.
 func DownloadAndHash(ctx context.Context, be Loader, h restic.Handle) (tmpfile *os.File, hash restic.ID, size int64, err error) {
 	tmpfile, err = fs.TempFile("", "restic-temp-")
 	if err != nil {
