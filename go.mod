@@ -8,14 +8,17 @@ require (
 	github.com/Azure/azure-sdk-for-go v47.1.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.6 // indirect
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
+	github.com/blugelabs/bluge v0.1.3
 	github.com/briandowns/spinner v1.11.1
 	github.com/cenkalti/backoff/v4 v4.1.0
 	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/dchest/siphash v1.2.2
+	github.com/dhowden/tag v0.0.0-20200828214007-46e57f75dbfc
 	github.com/dnaeon/go-vcr v1.0.1 // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elithrar/simple-scrypt v1.3.0
+	github.com/go-ole/go-ole v1.2.4
 	github.com/google/go-cmp v0.5.2
 	github.com/gopherjs/gopherjs v0.0.0-20200217142428-fce0ec30dd00 // indirect
 	github.com/hashicorp/golang-lru v0.5.4
@@ -29,7 +32,7 @@ require (
 	github.com/minio/sha256-simd v0.1.1
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.1 // indirect
-	github.com/muesli/reflow v0.2.0
+	github.com/muesli/reflow v0.2.1-0.20201103142440-d06e0479f1e5
 	github.com/muesli/termenv v0.7.4
 	github.com/ncw/swift v1.0.52
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
