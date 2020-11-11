@@ -15,17 +15,12 @@ import (
 	"time"
 
 	"github.com/briandowns/spinner"
-	"github.com/rubiojr/rapi/internal/filter"
-	"github.com/rubiojr/rapi/walker"
 	"github.com/rubiojr/rapi/restic"
+	"github.com/rubiojr/rapi/walker"
 	"github.com/urfave/cli/v2"
 )
 
-type fileInfo struct {
-	blobIDs restic.IDs
-	path    string
-	name    string
-}
+var s = spinner.New(spinner.CharSets[11], 100*time.Millisecond)
 
 func restoreAllVersions(c *cli.Context) error {
 	pattern := c.Args().First()
@@ -41,7 +36,6 @@ func restoreAllVersions(c *cli.Context) error {
 		return fmt.Errorf("missing pattern argument")
 	}
 
-	s := spinner.New(spinner.CharSets[11], 100*time.Millisecond)
 	s.Color("fgHiRed")
 	s.Suffix = " Finding files to restore..."
 	s.Start()
@@ -55,66 +49,69 @@ func restoreAllVersions(c *cli.Context) error {
 		return err
 	}
 
-	filesFound := map[fileID]fileInfo{}
+	filesFound := map[fileID]bool{}
 	for _, sn := range snapshots {
 		if sn.Tree == nil {
 			return fmt.Errorf("snapshot %s has nil tree", sn.ID().Str())
 		}
-		err = walker.Walk(ctx, rapiRepo, *sn.Tree, restic.NewIDSet(), rescueWalkTree(pattern, filesFound))
+		err = walker.Walk(ctx, rapiRepo, *sn.Tree, restic.NewIDSet(), rescueWalkTree(pattern, filesFound, targetDir))
 		if err != nil {
 			return fmt.Errorf("walking tree %s: %v", *sn.Tree, err)
 		}
 	}
 
 	s.Stop()
-	fmt.Printf("%d files matched. ", len(filesFound))
-	if len(filesFound) != 0 {
-		fmt.Printf("Restoring to target directory '%s'...\n", targetDir)
-	} else {
-		fmt.Println("Nothing to restore.")
+	fmt.Printf("%d files matched.\n", len(filesFound))
+	return nil
+}
+
+func restoreFile(fid fileID, name string, blobIDs restic.IDs, targetDir string) error {
+	hash := fmt.Sprintf("%x", fid)
+	fname := hash[:8] + "_" + name
+	if len(fname) >= 254 {
+		fname = "+" + fname[len(fname)-254:]
+	}
+	dest := filepath.Join(targetDir, fname)
+
+	f, err := os.Create(dest)
+	defer f.Close()
+	if err != nil {
+		panic(err)
 	}
 
-	for k, v := range filesFound {
-		hash := fmt.Sprintf("%x", k)
-		dest := filepath.Join(targetDir, v.name+"_"+hash)
-		f, err := os.Create(dest)
+	for _, rid := range blobIDs {
+		buf, err := rapiRepo.LoadBlob(context.Background(), restic.DataBlob, rid, nil)
 		if err != nil {
-			panic(err)
+			return err
 		}
-		for _, rid := range v.blobIDs {
-			buf, err := rapiRepo.LoadBlob(ctx, restic.DataBlob, rid, nil)
-			if err != nil {
-				return err
-			}
-			f.Write(buf)
-		}
-		f.Close()
-		destShort := filepath.Join(targetDir, v.name+"_"+hash[:5]+"...")
-		fmt.Printf("** restored %s to %s\n", v.path, destShort)
+		f.Write(buf)
 	}
 
 	return nil
 }
 
-func rescueWalkTree(pattern string, filesFound map[fileID]fileInfo) walker.WalkFunc {
+func rescueWalkTree(pattern string, filesFound map[fileID]bool, targetDir string) walker.WalkFunc {
 	return func(parentTreeID restic.ID, npath string, node *restic.Node, nodeErr error) (bool, error) {
 		if nodeErr != nil {
 			return true, nodeErr
 		}
 
-		if node == nil {
-			return true, nil
-		}
-
-		if node.Type != "file" {
+		if node == nil || node.Type != "file" {
 			return true, nil
 		}
 
 		fid := makeFileIDByContents(node)
-		if _, ok := filesFound[fid]; !ok {
-			if ok, _ := filter.Match(pattern, npath); ok {
-				meta := fileInfo{blobIDs: node.Content, path: npath, name: node.Name}
-				filesFound[fid] = meta
+		if _, ok := filesFound[fid]; ok {
+			return true, nil
+		}
+
+		if ok, _ := filepath.Match(pattern, node.Name); ok {
+			filesFound[fid] = true
+			err := restoreFile(fid, node.Name, node.Content, targetDir)
+			if err != nil {
+				s.Suffix = fmt.Sprintf(" error %s", node.Name)
+			} else {
+				s.Suffix = fmt.Sprintf(" restored %s", node.Name)
 			}
 		}
 
