@@ -18,6 +18,7 @@ import (
 	"github.com/rubiojr/rapi/internal/hashing"
 	"github.com/rubiojr/rapi/pack"
 	"github.com/rubiojr/rapi/restic"
+	"github.com/rubiojr/rapi/internal/ui/progress"
 
 	"github.com/minio/sha256-simd"
 	"golang.org/x/sync/errgroup"
@@ -518,13 +519,10 @@ func (r *Repository) LoadIndex(ctx context.Context) error {
 
 const listPackParallelism = 10
 
-// LoadIndexFromPacks loads a new index by reading all given pack files
-// This will create one Index data structure per pack file read that is not
-// marked as finalized.
-func (r *Repository) LoadIndexFromPacks(ctx context.Context, packs map[restic.ID]int64, p *restic.Progress) (invalid restic.IDs, err error) {
-	p.Start()
-	defer p.Done()
-
+// CreateIndexFromPacks creates a new index by reading all given pack files (with sizes).
+// The index is added to the MasterIndex but not marked as finalized.
+// Returned is the list of pack files which could not be read.
+func (r *Repository) CreateIndexFromPacks(ctx context.Context, packsize map[restic.ID]int64, p *progress.Counter) (invalid restic.IDs, err error) {
 	var m sync.Mutex
 
 	debug.Log("Loading index from pack files")
@@ -538,12 +536,11 @@ func (r *Repository) LoadIndexFromPacks(ctx context.Context, packs map[restic.ID
 		Size int64
 	}
 	ch := make(chan FileInfo)
-	indexCh := make(chan *Index)
 
 	// send list of pack files through ch, which is closed afterwards
 	wg.Go(func() error {
 		defer close(ch)
-		for id, size := range packs {
+		for id, size := range packsize {
 			select {
 			case <-ctx.Done():
 				return nil
@@ -553,7 +550,8 @@ func (r *Repository) LoadIndexFromPacks(ctx context.Context, packs map[restic.ID
 		return nil
 	})
 
-	// a worker receives an pack ID from ch, reads the pack contents, and sends it to indexCh
+	idx := NewIndex()
+	// a worker receives an pack ID from ch, reads the pack contents, and adds them to idx
 	worker := func() error {
 		for fi := range ch {
 			entries, _, err := r.ListPack(ctx, fi.ID, fi.Size)
@@ -563,13 +561,8 @@ func (r *Repository) LoadIndexFromPacks(ctx context.Context, packs map[restic.ID
 				invalid = append(invalid, fi.ID)
 				m.Unlock()
 			}
-			idx := NewIndex()
 			idx.StorePack(fi.ID, entries)
-
-			select {
-			case indexCh <- idx:
-			case <-ctx.Done():
-			}
+			p.Add(1)
 		}
 
 		return nil
@@ -577,23 +570,16 @@ func (r *Repository) LoadIndexFromPacks(ctx context.Context, packs map[restic.ID
 
 	// run workers on ch
 	wg.Go(func() error {
-		defer close(indexCh)
 		return RunWorkers(listPackParallelism, worker)
-	})
-
-	// receive decoded indexes
-	wg.Go(func() error {
-		for idx := range indexCh {
-			r.idx.Insert(idx)
-			p.Report(restic.Stat{Blobs: 1})
-		}
-		return nil
 	})
 
 	err = wg.Wait()
 	if err != nil {
 		return invalid, errors.Fatal(err.Error())
 	}
+
+	// Add idx to MasterIndex
+	r.idx.Insert(idx)
 
 	return invalid, nil
 }
