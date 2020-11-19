@@ -32,6 +32,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.12.0
 	github.com/pkg/xattr v0.4.1
+	github.com/prometheus/procfs v0.2.0
 	github.com/restic/chunker v0.4.0
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.5.0

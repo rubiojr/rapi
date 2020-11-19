@@ -114,3 +114,11 @@ Dumps snapshots to stdout.
     rapi cat config
 
 Dumps repository configuration to stdout.
+
+## index-mem-stats
+
+    rapi index-mem-stats
+
+The memory consumed by Restic when loading the repository index.
+
+![](images/index-mem-stats.png)
