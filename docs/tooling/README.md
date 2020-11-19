@@ -122,5 +122,3 @@ Dumps repository configuration to stdout.
 The memory consumed by Restic when loading the repository index.
 
 ![](images/index-mem-stats.png)
-
-### id
