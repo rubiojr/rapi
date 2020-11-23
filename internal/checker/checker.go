@@ -25,31 +25,25 @@ type Checker struct {
 	packs    map[restic.ID]int64
 	blobRefs struct {
 		sync.Mutex
-		// see flags below
-		M map[restic.BlobHandle]blobStatus
+		M restic.BlobSet
 	}
+	trackUnused bool
 
 	masterIndex *repository.MasterIndex
 
 	repo restic.Repository
 }
 
-type blobStatus uint8
-
-const (
-	blobStatusExists blobStatus = 1 << iota
-	blobStatusReferenced
-)
-
 // New returns a new checker which runs on repo.
-func New(repo restic.Repository) *Checker {
+func New(repo restic.Repository, trackUnused bool) *Checker {
 	c := &Checker{
 		packs:       make(map[restic.ID]int64),
 		masterIndex: repository.NewMasterIndex(),
 		repo:        repo,
+		trackUnused: trackUnused,
 	}
 
-	c.blobRefs.M = make(map[restic.BlobHandle]blobStatus)
+	c.blobRefs.M = restic.NewBlobSet()
 
 	return c
 }
@@ -162,8 +156,6 @@ func (c *Checker) LoadIndex(ctx context.Context) (hints []error, errs []error) {
 			debug.Log("process blobs")
 			cnt := 0
 			for blob := range res.Index.Each(wgCtx) {
-				h := restic.BlobHandle{ID: blob.ID, Type: blob.Type}
-				c.blobRefs.M[h] = blobStatusExists
 				cnt++
 
 				if _, ok := packToIndex[blob.PackID]; !ok {
@@ -186,13 +178,7 @@ func (c *Checker) LoadIndex(ctx context.Context) (hints []error, errs []error) {
 	c.masterIndex.MergeFinalIndexes()
 
 	// compute pack size using index entries
-	for blob := range c.masterIndex.Each(ctx) {
-		size, ok := c.packs[blob.PackID]
-		if !ok {
-			size = pack.HeaderSize
-		}
-		c.packs[blob.PackID] = size + int64(pack.PackedSizeOfBlob(blob.Length))
-	}
+	c.packs = c.masterIndex.PackSize(ctx, false)
 
 	debug.Log("checking for duplicate packs")
 	for packID := range c.packs {
@@ -529,9 +515,11 @@ func (c *Checker) filterTrees(ctx context.Context, backlog restic.IDs, loaderCha
 			// even when a file references a tree blob
 			c.blobRefs.Lock()
 			h := restic.BlobHandle{ID: nextTreeID, Type: restic.TreeBlob}
-			status := c.blobRefs.M[h]
+			blobReferenced := c.blobRefs.M.Has(h)
+			// noop if already referenced
+			c.blobRefs.M.Insert(h)
 			c.blobRefs.Unlock()
-			if (status & blobStatusReferenced) != 0 {
+			if blobReferenced {
 				continue
 			}
 
@@ -550,10 +538,6 @@ func (c *Checker) filterTrees(ctx context.Context, backlog restic.IDs, loaderCha
 		case loadCh <- nextTreeID:
 			outstandingLoadTreeJobs++
 			loadCh = nil
-			c.blobRefs.Lock()
-			h := restic.BlobHandle{ID: nextTreeID, Type: restic.TreeBlob}
-			c.blobRefs.M[h] |= blobStatusReferenced
-			c.blobRefs.Unlock()
 
 		case j, ok := <-inCh:
 			if !ok {
@@ -638,8 +622,6 @@ func (c *Checker) Structure(ctx context.Context, errChan chan<- error) {
 func (c *Checker) checkTree(id restic.ID, tree *restic.Tree) (errs []error) {
 	debug.Log("checking tree %v", id)
 
-	var blobs []restic.ID
-
 	for _, node := range tree.Nodes {
 		switch node.Type {
 		case "file":
@@ -653,13 +635,28 @@ func (c *Checker) checkTree(id restic.ID, tree *restic.Tree) (errs []error) {
 					errs = append(errs, Error{TreeID: id, Err: errors.Errorf("file %q blob %d has null ID", node.Name, b)})
 					continue
 				}
-				blobs = append(blobs, blobID)
 				blobSize, found := c.repo.LookupBlobSize(blobID, restic.DataBlob)
 				if !found {
-					errs = append(errs, Error{TreeID: id, Err: errors.Errorf("file %q blob %d size could not be found", node.Name, b)})
+					debug.Log("tree %v references blob %v which isn't contained in index", id, blobID)
+					errs = append(errs, Error{TreeID: id, Err: errors.Errorf("file %q blob %v not found in index", node.Name, blobID)})
 				}
 				size += uint64(blobSize)
 			}
+
+			if c.trackUnused {
+				// loop a second time to keep the locked section as short as possible
+				c.blobRefs.Lock()
+				for _, blobID := range node.Content {
+					if blobID.IsNull() {
+						continue
+					}
+					h := restic.BlobHandle{ID: blobID, Type: restic.DataBlob}
+					c.blobRefs.M.Insert(h)
+					debug.Log("blob %v is referenced", blobID)
+				}
+				c.blobRefs.Unlock()
+			}
+
 		case "dir":
 			if node.Subtree == nil {
 				errs = append(errs, Error{TreeID: id, Err: errors.Errorf("dir node %q has no subtree", node.Name)})
@@ -683,31 +680,26 @@ func (c *Checker) checkTree(id restic.ID, tree *restic.Tree) (errs []error) {
 		}
 	}
 
-	for _, blobID := range blobs {
-		c.blobRefs.Lock()
-		h := restic.BlobHandle{ID: blobID, Type: restic.DataBlob}
-		if (c.blobRefs.M[h] & blobStatusExists) == 0 {
-			debug.Log("tree %v references blob %v which isn't contained in index", id, blobID)
-			errs = append(errs, Error{TreeID: id, BlobID: blobID, Err: errors.New("not found in index")})
-		}
-		c.blobRefs.M[h] |= blobStatusReferenced
-		debug.Log("blob %v is referenced", blobID)
-		c.blobRefs.Unlock()
-	}
-
 	return errs
 }
 
 // UnusedBlobs returns all blobs that have never been referenced.
-func (c *Checker) UnusedBlobs() (blobs restic.BlobHandles) {
+func (c *Checker) UnusedBlobs(ctx context.Context) (blobs restic.BlobHandles) {
+	if !c.trackUnused {
+		panic("only works when tracking blob references")
+	}
 	c.blobRefs.Lock()
 	defer c.blobRefs.Unlock()
 
 	debug.Log("checking %d blobs", len(c.blobRefs.M))
-	for id, flags := range c.blobRefs.M {
-		if (flags & blobStatusReferenced) == 0 {
-			debug.Log("blob %v not referenced", id)
-			blobs = append(blobs, id)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	for blob := range c.repo.Index().Each(ctx) {
+		h := restic.BlobHandle{ID: blob.ID, Type: blob.Type}
+		if !c.blobRefs.M.Has(h) {
+			debug.Log("blob %v not referenced", h)
+			blobs = append(blobs, h)
 		}
 	}
 
@@ -751,17 +743,17 @@ func checkPack(ctx context.Context, r restic.Repository, id restic.ID, size int6
 		return errors.Errorf("Pack size does not match, want %v, got %v", size, realSize)
 	}
 
-	blobs, err := pack.List(r.Key(), packfile, size)
+	blobs, hdrSize, err := pack.List(r.Key(), packfile, size)
 	if err != nil {
 		return err
 	}
 
 	var errs []error
 	var buf []byte
-	sizeFromBlobs := int64(pack.HeaderSize) // pack size computed only from blob information
+	sizeFromBlobs := uint(hdrSize)
 	idx := r.Index()
 	for i, blob := range blobs {
-		sizeFromBlobs += int64(pack.PackedSizeOfBlob(blob.Length))
+		sizeFromBlobs += blob.Length
 		debug.Log("  check blob %d: %v", i, blob)
 
 		buf = buf[:cap(buf)]
@@ -799,7 +791,7 @@ func checkPack(ctx context.Context, r restic.Repository, id restic.ID, size int6
 
 		// Check if blob is contained in index and position is correct
 		idxHas := false
-		for _, pb := range idx.Lookup(blob.ID, blob.Type) {
+		for _, pb := range idx.Lookup(blob.BlobHandle) {
 			if pb.PackID == id && pb.Offset == blob.Offset && pb.Length == blob.Length {
 				idxHas = true
 				break
@@ -811,7 +803,7 @@ func checkPack(ctx context.Context, r restic.Repository, id restic.ID, size int6
 		}
 	}
 
-	if sizeFromBlobs != size {
+	if int64(sizeFromBlobs) != size {
 		debug.Log("Pack size does not match, want %v, got %v", size, sizeFromBlobs)
 		errs = append(errs, errors.Errorf("Pack size does not match, want %v, got %v", size, sizeFromBlobs))
 	}

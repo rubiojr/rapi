@@ -223,7 +223,7 @@ func runCatFor(c *cli.Context, tpe string) error {
 
 	case "blob":
 		for _, t := range []restic.BlobType{restic.DataBlob, restic.TreeBlob} {
-			if !rapiRepo.Index().Has(id, t) {
+			if !rapiRepo.Index().Has(restic.BlobHandle{ID: id, Type: t}) {
 				continue
 			}
 

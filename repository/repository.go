@@ -152,7 +152,7 @@ func (r *Repository) LoadBlob(ctx context.Context, t restic.BlobType, id restic.
 	debug.Log("load %v with id %v (buf len %v, cap %d)", t, id, len(buf), cap(buf))
 
 	// lookup packs
-	blobs := r.idx.Lookup(id, t)
+	blobs := r.idx.Lookup(restic.BlobHandle{ID: id, Type: t})
 	if len(blobs) == 0 {
 		debug.Log("id %v not found in index", id)
 		return nil, errors.Errorf("id %v not found in repository", id)
@@ -232,7 +232,7 @@ func (r *Repository) LoadJSONUnpacked(ctx context.Context, t restic.FileType, id
 
 // LookupBlobSize returns the size of blob id.
 func (r *Repository) LookupBlobSize(id restic.ID, tpe restic.BlobType) (uint, bool) {
-	return r.idx.LookupSize(id, tpe)
+	return r.idx.LookupSize(restic.BlobHandle{ID: id, Type: tpe})
 }
 
 // SaveAndEncrypt encrypts data and stores it to the backend as type t. If data
@@ -740,16 +740,11 @@ func (r *Repository) List(ctx context.Context, t restic.FileType, fn func(restic
 }
 
 // ListPack returns the list of blobs saved in the pack id and the length of
-// the file as stored in the backend.
-func (r *Repository) ListPack(ctx context.Context, id restic.ID, size int64) ([]restic.Blob, int64, error) {
+// the the pack header.
+func (r *Repository) ListPack(ctx context.Context, id restic.ID, size int64) ([]restic.Blob, uint32, error) {
 	h := restic.Handle{Type: restic.PackFile, Name: id.String()}
 
-	blobs, err := pack.List(r.Key(), restic.ReaderAt(ctx, r.Backend(), h), size)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return blobs, size, nil
+	return pack.List(r.Key(), restic.ReaderAt(ctx, r.Backend(), h), size)
 }
 
 // Delete calls backend.Delete() if implemented, and returns an error
@@ -778,7 +773,7 @@ func (r *Repository) SaveBlob(ctx context.Context, t restic.BlobType, buf []byte
 	}
 
 	// first try to add to pending blobs; if not successful, this blob is already known
-	known = !r.idx.addPending(newID, t)
+	known = !r.idx.addPending(restic.BlobHandle{ID: newID, Type: t})
 
 	// only save when needed or explicitly told
 	if !known || storeDuplicate {
