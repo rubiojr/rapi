@@ -44,21 +44,17 @@ func restoreAllVersions(c *cli.Context) error {
 		return err
 	}
 
-	snapshots, err := restic.LoadAllSnapshots(ctx, rapiRepo, nil)
-	if err != nil {
-		return err
-	}
-
 	filesFound := map[fileID]bool{}
-	for _, sn := range snapshots {
+	restic.ForAllSnapshots(ctx, rapiRepo, nil, func(id restic.ID, sn *restic.Snapshot, err error) error {
+		if err != nil {
+			return err
+		}
+
 		if sn.Tree == nil {
 			return fmt.Errorf("snapshot %s has nil tree", sn.ID().Str())
 		}
-		err = walker.Walk(ctx, rapiRepo, *sn.Tree, restic.NewIDSet(), rescueWalkTree(pattern, filesFound, targetDir))
-		if err != nil {
-			return fmt.Errorf("walking tree %s: %v", *sn.Tree, err)
-		}
-	}
+		return walker.Walk(ctx, rapiRepo, *sn.Tree, restic.NewIDSet(), rescueWalkTree(pattern, filesFound, targetDir))
+	})
 
 	s.Stop()
 	fmt.Printf("%d files matched.\n", len(filesFound))
