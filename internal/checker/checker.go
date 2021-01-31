@@ -74,108 +74,48 @@ func (err ErrOldIndexFormat) Error() string {
 func (c *Checker) LoadIndex(ctx context.Context) (hints []error, errs []error) {
 	debug.Log("Start")
 
-	// track spawned goroutines using wg, create a new context which is
-	// cancelled as soon as an error occurs.
-	wg, wgCtx := errgroup.WithContext(ctx)
-
-	type FileInfo struct {
-		restic.ID
-		Size int64
-	}
-
-	type Result struct {
-		*repository.Index
-		restic.ID
-		Err error
-	}
-
-	ch := make(chan FileInfo)
-	resultCh := make(chan Result)
-
-	// send list of index files through ch, which is closed afterwards
-	wg.Go(func() error {
-		defer close(ch)
-		return c.repo.List(wgCtx, restic.IndexFile, func(id restic.ID, size int64) error {
-			select {
-			case <-wgCtx.Done():
-				return nil
-			case ch <- FileInfo{id, size}:
-			}
-			return nil
-		})
-	})
-
-	// a worker receives an index ID from ch, loads the index, and sends it to indexCh
-	worker := func() error {
-		var buf []byte
-		for fi := range ch {
-			debug.Log("worker got file %v", fi.ID.Str())
-			var err error
-			var idx *repository.Index
-			oldFormat := false
-
-			buf, err = c.repo.LoadAndDecrypt(wgCtx, buf[:0], restic.IndexFile, fi.ID)
-			if err == nil {
-				idx, oldFormat, err = repository.DecodeIndex(buf, fi.ID)
-			}
-
-			if oldFormat {
-				debug.Log("index %v has old format", fi.ID.Str())
-				hints = append(hints, ErrOldIndexFormat{fi.ID})
-			}
-
-			err = errors.Wrapf(err, "error loading index %v", fi.ID.Str())
-
-			select {
-			case resultCh <- Result{idx, fi.ID, err}:
-			case <-wgCtx.Done():
-			}
-		}
-		return nil
-	}
-
-	// run workers on ch
-	wg.Go(func() error {
-		defer close(resultCh)
-		return repository.RunWorkers(defaultParallelism, worker)
-	})
-
-	// receive decoded indexes
 	packToIndex := make(map[restic.ID]restic.IDSet)
-	wg.Go(func() error {
-		for res := range resultCh {
-			debug.Log("process index %v, err %v", res.ID, res.Err)
+	err := repository.ForAllIndexes(ctx, c.repo, func(id restic.ID, index *repository.Index, oldFormat bool, err error) error {
+		debug.Log("process index %v, err %v", id, err)
 
-			if res.Err != nil {
-				errs = append(errs, res.Err)
-				continue
-			}
-
-			c.masterIndex.Insert(res.Index)
-
-			debug.Log("process blobs")
-			cnt := 0
-			for blob := range res.Index.Each(wgCtx) {
-				cnt++
-
-				if _, ok := packToIndex[blob.PackID]; !ok {
-					packToIndex[blob.PackID] = restic.NewIDSet()
-				}
-				packToIndex[blob.PackID].Insert(res.ID)
-			}
-
-			debug.Log("%d blobs processed", cnt)
+		if oldFormat {
+			debug.Log("index %v has old format", id.Str())
+			hints = append(hints, ErrOldIndexFormat{id})
 		}
+
+		err = errors.Wrapf(err, "error loading index %v", id.Str())
+
+		if err != nil {
+			errs = append(errs, err)
+			return nil
+		}
+
+		c.masterIndex.Insert(index)
+
+		debug.Log("process blobs")
+		cnt := 0
+		for blob := range index.Each(ctx) {
+			cnt++
+
+			if _, ok := packToIndex[blob.PackID]; !ok {
+				packToIndex[blob.PackID] = restic.NewIDSet()
+			}
+			packToIndex[blob.PackID].Insert(id)
+		}
+
+		debug.Log("%d blobs processed", cnt)
 		return nil
 	})
-
-	err := wg.Wait()
 	if err != nil {
 		errs = append(errs, err)
 	}
 
 	// Merge index before computing pack sizes, as this needs removed duplicates
-	c.masterIndex.MergeFinalIndexes()
+	err = c.masterIndex.MergeFinalIndexes()
+	if err != nil {
+		// abort if an error occurs merging the indexes
+		return hints, append(errs, err)
+	}
 
 	// compute pack size using index entries
 	c.packs = c.masterIndex.PackSize(ctx, false)
@@ -308,200 +248,27 @@ func (e TreeError) Error() string {
 	return fmt.Sprintf("tree %v: %v", e.ID.Str(), e.Errors)
 }
 
-type treeJob struct {
-	restic.ID
-	error
-	*restic.Tree
-}
-
-// loadTreeWorker loads trees from repo and sends them to out.
-func loadTreeWorker(ctx context.Context, repo restic.Repository,
-	in <-chan restic.ID, out chan<- treeJob,
-	wg *sync.WaitGroup) {
-
-	defer func() {
-		debug.Log("exiting")
-		wg.Done()
-	}()
-
-	var (
-		inCh  = in
-		outCh = out
-		job   treeJob
-	)
-
-	outCh = nil
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case treeID, ok := <-inCh:
-			if !ok {
-				return
-			}
-			debug.Log("load tree %v", treeID)
-
-			tree, err := repo.LoadTree(ctx, treeID)
-			debug.Log("load tree %v (%v) returned err: %v", tree, treeID, err)
-			job = treeJob{ID: treeID, error: err, Tree: tree}
-			outCh = out
-			inCh = nil
-
-		case outCh <- job:
-			debug.Log("sent tree %v", job.ID)
-			outCh = nil
-			inCh = in
-		}
-	}
-}
-
 // checkTreeWorker checks the trees received and sends out errors to errChan.
-func (c *Checker) checkTreeWorker(ctx context.Context, in <-chan treeJob, out chan<- error, wg *sync.WaitGroup) {
-	defer func() {
-		debug.Log("exiting")
-		wg.Done()
-	}()
+func (c *Checker) checkTreeWorker(ctx context.Context, trees <-chan restic.TreeItem, out chan<- error) {
+	for job := range trees {
+		debug.Log("check tree %v (tree %v, err %v)", job.ID, job.Tree, job.Error)
 
-	var (
-		inCh      = in
-		outCh     = out
-		treeError TreeError
-	)
+		var errs []error
+		if job.Error != nil {
+			errs = append(errs, job.Error)
+		} else {
+			errs = c.checkTree(job.ID, job.Tree)
+		}
 
-	outCh = nil
-	for {
+		if len(errs) == 0 {
+			continue
+		}
+		treeError := TreeError{ID: job.ID, Errors: errs}
 		select {
 		case <-ctx.Done():
-			debug.Log("done channel closed, exiting")
 			return
-
-		case job, ok := <-inCh:
-			if !ok {
-				debug.Log("input channel closed, exiting")
-				return
-			}
-
-			debug.Log("check tree %v (tree %v, err %v)", job.ID, job.Tree, job.error)
-
-			var errs []error
-			if job.error != nil {
-				errs = append(errs, job.error)
-			} else {
-				errs = c.checkTree(job.ID, job.Tree)
-			}
-
-			if len(errs) > 0 {
-				debug.Log("checked tree %v: %v errors", job.ID, len(errs))
-				treeError = TreeError{ID: job.ID, Errors: errs}
-				outCh = out
-				inCh = nil
-			}
-
-		case outCh <- treeError:
+		case out <- treeError:
 			debug.Log("tree %v: sent %d errors", treeError.ID, len(treeError.Errors))
-			outCh = nil
-			inCh = in
-		}
-	}
-}
-
-func (c *Checker) filterTrees(ctx context.Context, backlog restic.IDs, loaderChan chan<- restic.ID, in <-chan treeJob, out chan<- treeJob) {
-	defer func() {
-		debug.Log("closing output channels")
-		close(loaderChan)
-		close(out)
-	}()
-
-	var (
-		inCh                    = in
-		outCh                   = out
-		loadCh                  = loaderChan
-		job                     treeJob
-		nextTreeID              restic.ID
-		outstandingLoadTreeJobs = 0
-	)
-
-	outCh = nil
-	loadCh = nil
-
-	for {
-		if loadCh == nil && len(backlog) > 0 {
-			// process last added ids first, that is traverse the tree in depth-first order
-			ln := len(backlog) - 1
-			nextTreeID, backlog = backlog[ln], backlog[:ln]
-
-			// use a separate flag for processed trees to ensure that check still processes trees
-			// even when a file references a tree blob
-			c.blobRefs.Lock()
-			h := restic.BlobHandle{ID: nextTreeID, Type: restic.TreeBlob}
-			blobReferenced := c.blobRefs.M.Has(h)
-			// noop if already referenced
-			c.blobRefs.M.Insert(h)
-			c.blobRefs.Unlock()
-			if blobReferenced {
-				continue
-			}
-
-			loadCh = loaderChan
-		}
-
-		if loadCh == nil && outCh == nil && outstandingLoadTreeJobs == 0 {
-			debug.Log("backlog is empty, all channels nil, exiting")
-			return
-		}
-
-		select {
-		case <-ctx.Done():
-			return
-
-		case loadCh <- nextTreeID:
-			outstandingLoadTreeJobs++
-			loadCh = nil
-
-		case j, ok := <-inCh:
-			if !ok {
-				debug.Log("input channel closed")
-				inCh = nil
-				in = nil
-				continue
-			}
-
-			outstandingLoadTreeJobs--
-
-			debug.Log("input job tree %v", j.ID)
-
-			if j.error != nil {
-				debug.Log("received job with error: %v (tree %v, ID %v)", j.error, j.Tree, j.ID)
-			} else if j.Tree == nil {
-				debug.Log("received job with nil tree pointer: %v (ID %v)", j.error, j.ID)
-				// send a new job with the new error instead of the old one
-				j = treeJob{ID: j.ID, error: errors.New("tree is nil and error is nil")}
-			} else {
-				subtrees := j.Tree.Subtrees()
-				debug.Log("subtrees for tree %v: %v", j.ID, subtrees)
-				// iterate backwards over subtree to compensate backwards traversal order of nextTreeID selection
-				for i := len(subtrees) - 1; i >= 0; i-- {
-					id := subtrees[i]
-					if id.IsNull() {
-						// We do not need to raise this error here, it is
-						// checked when the tree is checked. Just make sure
-						// that we do not add any null IDs to the backlog.
-						debug.Log("tree %v has nil subtree", j.ID)
-						continue
-					}
-					backlog = append(backlog, id)
-				}
-			}
-
-			job = j
-			outCh = out
-			inCh = nil
-
-		case outCh <- job:
-			debug.Log("tree sent to check: %v", job.ID)
-			outCh = nil
-			inCh = in
 		}
 	}
 }
@@ -527,10 +294,9 @@ func loadSnapshotTreeIDs(ctx context.Context, repo restic.Repository) (ids resti
 // Structure checks that for all snapshots all referenced data blobs and
 // subtrees are available in the index. errChan is closed after all trees have
 // been traversed.
-func (c *Checker) Structure(ctx context.Context, errChan chan<- error) {
-	defer close(errChan)
-
+func (c *Checker) Structure(ctx context.Context, p *progress.Counter, errChan chan<- error) {
 	trees, errs := loadSnapshotTreeIDs(ctx, c.repo)
+	p.SetMax(uint64(len(trees)))
 	debug.Log("need to check %d trees from snapshots, %d errs returned", len(trees), len(errs))
 
 	for _, err := range errs {
@@ -541,20 +307,32 @@ func (c *Checker) Structure(ctx context.Context, errChan chan<- error) {
 		}
 	}
 
-	treeIDChan := make(chan restic.ID)
-	treeJobChan1 := make(chan treeJob)
-	treeJobChan2 := make(chan treeJob)
+	wg, ctx := errgroup.WithContext(ctx)
+	treeStream := restic.StreamTrees(ctx, wg, c.repo, trees, func(treeID restic.ID) bool {
+		// blobRefs may be accessed in parallel by checkTree
+		c.blobRefs.Lock()
+		h := restic.BlobHandle{ID: treeID, Type: restic.TreeBlob}
+		blobReferenced := c.blobRefs.M.Has(h)
+		// noop if already referenced
+		c.blobRefs.M.Insert(h)
+		c.blobRefs.Unlock()
+		return blobReferenced
+	}, p)
 
-	var wg sync.WaitGroup
+	defer close(errChan)
 	for i := 0; i < defaultParallelism; i++ {
-		wg.Add(2)
-		go loadTreeWorker(ctx, c.repo, treeIDChan, treeJobChan1, &wg)
-		go c.checkTreeWorker(ctx, treeJobChan2, errChan, &wg)
+		wg.Go(func() error {
+			c.checkTreeWorker(ctx, treeStream, errChan)
+			return nil
+		})
 	}
 
-	c.filterTrees(ctx, trees, treeIDChan, treeJobChan1, treeJobChan2)
-
-	wg.Wait()
+	// the wait group should not return an error because no worker returns an
+	// error, so panic if that has changed somehow.
+	err := wg.Wait()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (c *Checker) checkTree(id restic.ID, tree *restic.Tree) (errs []error) {

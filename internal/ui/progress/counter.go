@@ -1,18 +1,18 @@
 package progress
 
 import (
-	"os"
 	"sync"
 	"time"
 
 	"github.com/rubiojr/rapi/internal/debug"
+	"github.com/rubiojr/rapi/internal/ui/signals"
 )
 
 // A Func is a callback for a Counter.
 //
 // The final argument is true if Counter.Done has been called,
 // which means that the current call will be the last.
-type Func func(value uint64, runtime time.Duration, final bool)
+type Func func(value uint64, total uint64, runtime time.Duration, final bool)
 
 // A Counter tracks a running count and controls a goroutine that passes its
 // value periodically to a Func.
@@ -27,21 +27,21 @@ type Counter struct {
 
 	valueMutex sync.Mutex
 	value      uint64
+	max        uint64
 }
 
 // New starts a new Counter.
-func New(interval time.Duration, report Func) *Counter {
-	signals.Once.Do(func() {
-		signals.ch = make(chan os.Signal, 1)
-		setupSignals()
-	})
-
+func New(interval time.Duration, total uint64, report Func) *Counter {
 	c := &Counter{
 		report:  report,
 		start:   time.Now(),
 		stopped: make(chan struct{}),
 		stop:    make(chan struct{}),
-		tick:    time.NewTicker(interval),
+		max:     total,
+	}
+
+	if interval > 0 {
+		c.tick = time.NewTicker(interval)
 	}
 
 	go c.run()
@@ -59,18 +59,31 @@ func (c *Counter) Add(v uint64) {
 	c.valueMutex.Unlock()
 }
 
+// SetMax sets the maximum expected counter value. This method is concurrency-safe.
+func (c *Counter) SetMax(max uint64) {
+	if c == nil {
+		return
+	}
+	c.valueMutex.Lock()
+	c.max = max
+	c.valueMutex.Unlock()
+}
+
 // Done tells a Counter to stop and waits for it to report its final value.
 func (c *Counter) Done() {
 	if c == nil {
 		return
 	}
-	c.tick.Stop()
+	if c.tick != nil {
+		c.tick.Stop()
+	}
 	close(c.stop)
 	<-c.stopped    // Wait for last progress report.
 	*c = Counter{} // Prevent reuse.
 }
 
-func (c *Counter) get() uint64 {
+// Get the current Counter value. This method is concurrency-safe.
+func (c *Counter) Get() uint64 {
 	c.valueMutex.Lock()
 	v := c.value
 	c.valueMutex.Unlock()
@@ -78,32 +91,38 @@ func (c *Counter) get() uint64 {
 	return v
 }
 
+func (c *Counter) getMax() uint64 {
+	c.valueMutex.Lock()
+	max := c.max
+	c.valueMutex.Unlock()
+
+	return max
+}
+
 func (c *Counter) run() {
 	defer close(c.stopped)
 	defer func() {
 		// Must be a func so that time.Since isn't called at defer time.
-		c.report(c.get(), time.Since(c.start), true)
+		c.report(c.Get(), c.getMax(), time.Since(c.start), true)
 	}()
 
+	var tick <-chan time.Time
+	if c.tick != nil {
+		tick = c.tick.C
+	}
+	signalsCh := signals.GetProgressChannel()
 	for {
 		var now time.Time
 
 		select {
-		case now = <-c.tick.C:
-		case sig := <-signals.ch:
+		case now = <-tick:
+		case sig := <-signalsCh:
 			debug.Log("Signal received: %v\n", sig)
 			now = time.Now()
 		case <-c.stop:
 			return
 		}
 
-		c.report(c.get(), now.Sub(c.start), false)
+		c.report(c.Get(), c.getMax(), now.Sub(c.start), false)
 	}
-}
-
-// XXX The fact that signals is a single global variable means that only one
-// Counter receives each incoming signal.
-var signals struct {
-	ch chan os.Signal
-	sync.Once
 }

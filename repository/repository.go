@@ -419,9 +419,8 @@ func (r *Repository) saveIndex(ctx context.Context, indexes ...*Index) error {
 
 		debug.Log("Saved index %d as %v", i, sid)
 	}
-	r.idx.MergeFinalIndexes()
 
-	return nil
+	return r.idx.MergeFinalIndexes()
 }
 
 // SaveIndex saves all new indexes in the backend.
@@ -434,86 +433,36 @@ func (r *Repository) SaveFullIndex(ctx context.Context) error {
 	return r.saveIndex(ctx, r.idx.FinalizeFullIndexes()...)
 }
 
-const loadIndexParallelism = 4
-
 // LoadIndex loads all index files from the backend in parallel and stores them
 // in the master index. The first error that occurred is returned.
 func (r *Repository) LoadIndex(ctx context.Context) error {
 	debug.Log("Loading index")
 
-	// track spawned goroutines using wg, create a new context which is
-	// cancelled as soon as an error occurs.
-	wg, ctx := errgroup.WithContext(ctx)
-
-	type FileInfo struct {
-		restic.ID
-		Size int64
-	}
-	ch := make(chan FileInfo)
-	indexCh := make(chan *Index)
-
-	// send list of index files through ch, which is closed afterwards
-	wg.Go(func() error {
-		defer close(ch)
-		return r.List(ctx, restic.IndexFile, func(id restic.ID, size int64) error {
-			select {
-			case <-ctx.Done():
-				return nil
-			case ch <- FileInfo{id, size}:
-			}
-			return nil
-		})
-	})
-
-	// a worker receives an index ID from ch, loads the index, and sends it to indexCh
-	worker := func() error {
-		var buf []byte
-		for fi := range ch {
-			var err error
-			buf, err = r.LoadAndDecrypt(ctx, buf[:0], restic.IndexFile, fi.ID)
-			if err != nil {
-				return errors.Wrapf(err, "unable to load index %s", fi.ID.Str())
-			}
-			idx, _, err := DecodeIndex(buf, fi.ID)
-			if err != nil {
-				return errors.Wrapf(err, "unable to decode index %s", fi.ID.Str())
-			}
-
-			select {
-			case indexCh <- idx:
-			case <-ctx.Done():
-			}
-		}
-
-		return nil
-	}
-
-	// run workers on ch
-	wg.Go(func() error {
-		defer close(indexCh)
-		return RunWorkers(loadIndexParallelism, worker)
-	})
-
-	// receive decoded indexes
 	validIndex := restic.NewIDSet()
-	wg.Go(func() error {
-		for idx := range indexCh {
-			ids, err := idx.IDs()
-			if err == nil {
-				for _, id := range ids {
-					validIndex.Insert(id)
-				}
-			}
-
-			r.idx.Insert(idx)
+	err := ForAllIndexes(ctx, r, func(id restic.ID, idx *Index, oldFormat bool, err error) error {
+		if err != nil {
+			return err
 		}
-		r.idx.MergeFinalIndexes()
+
+		ids, err := idx.IDs()
+		if err != nil {
+			return err
+		}
+
+		for _, id := range ids {
+			validIndex.Insert(id)
+		}
+		r.idx.Insert(idx)
 		return nil
 	})
 
-	err := wg.Wait()
 	if err != nil {
 		return errors.Fatal(err.Error())
+	}
+
+	err = r.idx.MergeFinalIndexes()
+	if err != nil {
+		return err
 	}
 
 	// remove index files from the cache which have been removed in the repo
@@ -646,20 +595,6 @@ func (r *Repository) PrepareCache(indexIDs restic.IDSet) error {
 	}
 
 	return nil
-}
-
-// LoadIndex loads the index id from backend and returns it.
-func LoadIndex(ctx context.Context, repo restic.Repository, id restic.ID) (*Index, error) {
-	buf, err := repo.LoadAndDecrypt(ctx, nil, restic.IndexFile, id)
-	if err != nil {
-		return nil, err
-	}
-
-	idx, oldFormat, err := DecodeIndex(buf, id)
-	if oldFormat {
-		fmt.Fprintf(os.Stderr, "index %v has old format\n", id.Str())
-	}
-	return idx, err
 }
 
 // SearchKey finds a key with the supplied password, afterwards the config is
@@ -848,16 +783,19 @@ func DownloadAndHash(ctx context.Context, be Loader, h restic.Handle) (tmpfile *
 		hash = restic.IDFromHash(hrd.Sum(nil))
 		return ierr
 	})
+
 	if err != nil {
-		tmpfile.Close()
-		os.Remove(tmpfile.Name())
+		// ignore subsequent errors
+		_ = tmpfile.Close()
+		_ = os.Remove(tmpfile.Name())
 		return nil, restic.ID{}, -1, errors.Wrap(err, "Load")
 	}
 
 	_, err = tmpfile.Seek(0, io.SeekStart)
 	if err != nil {
-		tmpfile.Close()
-		os.Remove(tmpfile.Name())
+		// ignore subsequent errors
+		_ = tmpfile.Close()
+		_ = os.Remove(tmpfile.Name())
 		return nil, restic.ID{}, -1, errors.Wrap(err, "Seek")
 	}
 

@@ -1,12 +1,15 @@
 package restorer
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"io"
 	"math"
 	"path/filepath"
+	"sort"
 	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rubiojr/rapi/crypto"
 	"github.com/rubiojr/rapi/internal/debug"
@@ -22,20 +25,16 @@ import (
 const (
 	workerCount = 8
 
-	// fileInfo flags
-	fileProgress = 1
-	fileError    = 2
-
 	largeFileBlobCount = 25
 )
 
 // information about regular file being restored
 type fileInfo struct {
-	lock     sync.Mutex
-	flags    int
-	size     int64
-	location string      // file on local filesystem relative to restorer basedir
-	blobs    interface{} // blobs of the file
+	lock       sync.Mutex
+	inProgress bool
+	size       int64
+	location   string      // file on local filesystem relative to restorer basedir
+	blobs      interface{} // blobs of the file
 }
 
 type fileBlobInfo struct {
@@ -59,6 +58,7 @@ type fileRestorer struct {
 
 	dst   string
 	files []*fileInfo
+	Error func(string, error) error
 }
 
 func newFileRestorer(dst string,
@@ -72,6 +72,7 @@ func newFileRestorer(dst string,
 		packLoader:  packLoader,
 		filesWriter: newFilesWriter(workerCount),
 		dst:         dst,
+		Error:       restorerAbortOnAllErrors,
 	}
 }
 
@@ -141,45 +142,42 @@ func (r *fileRestorer) restoreFiles(ctx context.Context) error {
 		}
 	}
 
-	var wg sync.WaitGroup
+	wg, ctx := errgroup.WithContext(ctx)
 	downloadCh := make(chan *packInfo)
-	worker := func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-ctx.Done():
-				return // context cancelled
-			case pack, ok := <-downloadCh:
-				if !ok {
-					return // channel closed
-				}
-				r.downloadPack(ctx, pack)
+
+	worker := func() error {
+		for pack := range downloadCh {
+			if err := r.downloadPack(ctx, pack); err != nil {
+				return err
 			}
 		}
+		return nil
 	}
 	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go worker()
+		wg.Go(worker)
 	}
 
 	// the main restore loop
-	for _, id := range packOrder {
-		pack := packs[id]
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case downloadCh <- pack:
-			debug.Log("Scheduled download pack %s", pack.id.Str())
+	wg.Go(func() error {
+		for _, id := range packOrder {
+			pack := packs[id]
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case downloadCh <- pack:
+				debug.Log("Scheduled download pack %s", pack.id.Str())
+			}
 		}
-	}
+		close(downloadCh)
+		return nil
+	})
 
-	close(downloadCh)
-	wg.Wait()
-
-	return nil
+	return wg.Wait()
 }
 
-func (r *fileRestorer) downloadPack(ctx context.Context, pack *packInfo) {
+const maxBufferSize = 4 * 1024 * 1024
+
+func (r *fileRestorer) downloadPack(ctx context.Context, pack *packInfo) error {
 
 	// calculate pack byte range and blob->[]files->[]offsets mappings
 	start, end := int64(math.MaxInt64), int64(0)
@@ -226,101 +224,116 @@ func (r *fileRestorer) downloadPack(ctx context.Context, pack *packInfo) {
 		}
 	}
 
-	packData := make([]byte, int(end-start))
+	sortedBlobs := make([]restic.ID, 0, len(blobs))
+	for blobID := range blobs {
+		sortedBlobs = append(sortedBlobs, blobID)
+	}
+	sort.Slice(sortedBlobs, func(i, j int) bool {
+		return blobs[sortedBlobs[i]].offset < blobs[sortedBlobs[j]].offset
+	})
+
+	sanitizeError := func(file *fileInfo, err error) error {
+		if err != nil {
+			err = r.Error(file.location, err)
+		}
+		return err
+	}
 
 	h := restic.Handle{Type: restic.PackFile, Name: pack.id.String()}
 	err := r.packLoader(ctx, h, int(end-start), start, func(rd io.Reader) error {
-		l, err := io.ReadFull(rd, packData)
-		if err != nil {
-			return err
+		bufferSize := int(end - start)
+		if bufferSize > maxBufferSize {
+			bufferSize = maxBufferSize
 		}
-		if l != len(packData) {
-			return errors.Errorf("unexpected pack size: expected %d but got %d", len(packData), l)
+		bufRd := bufio.NewReaderSize(rd, bufferSize)
+		currentBlobEnd := start
+		var blobData, buf []byte
+		for _, blobID := range sortedBlobs {
+			blob := blobs[blobID]
+			_, err := bufRd.Discard(int(blob.offset - currentBlobEnd))
+			if err != nil {
+				return err
+			}
+			blobData, buf, err = r.loadBlob(bufRd, blobID, blob.length, buf)
+			if err != nil {
+				for file := range blob.files {
+					if errFile := sanitizeError(file, err); errFile != nil {
+						return errFile
+					}
+				}
+				continue
+			}
+			currentBlobEnd = blob.offset + int64(blob.length)
+			for file, offsets := range blob.files {
+				for _, offset := range offsets {
+					writeToFile := func() error {
+						// this looks overly complicated and needs explanation
+						// two competing requirements:
+						// - must create the file once and only once
+						// - should allow concurrent writes to the file
+						// so write the first blob while holding file lock
+						// write other blobs after releasing the lock
+						createSize := int64(-1)
+						file.lock.Lock()
+						if file.inProgress {
+							file.lock.Unlock()
+						} else {
+							defer file.lock.Unlock()
+							file.inProgress = true
+							createSize = file.size
+						}
+						return r.filesWriter.writeToFile(r.targetPath(file.location), blobData, offset, createSize)
+					}
+					err := sanitizeError(file, writeToFile())
+					if err != nil {
+						return err
+					}
+				}
+			}
 		}
 		return nil
 	})
 
-	markFileError := func(file *fileInfo, err error) {
-		file.lock.Lock()
-		defer file.lock.Unlock()
-		if file.flags&fileError == 0 {
-			file.flags |= fileError
-		}
-	}
-
 	if err != nil {
 		for file := range pack.files {
-			markFileError(file, err)
-		}
-		return
-	}
-
-	rd := bytes.NewReader(packData)
-
-	for blobID, blob := range blobs {
-		blobData, err := r.loadBlob(rd, blobID, blob.offset-start, blob.length)
-		if err != nil {
-			for file := range blob.files {
-				markFileError(file, err)
-			}
-			continue
-		}
-		for file, offsets := range blob.files {
-			for _, offset := range offsets {
-				writeToFile := func() error {
-					// this looks overly complicated and needs explanation
-					// two competing requirements:
-					// - must create the file once and only once
-					// - should allow concurrent writes to the file
-					// so write the first blob while holding file lock
-					// write other blobs after releasing the lock
-					file.lock.Lock()
-					create := file.flags&fileProgress == 0
-					createSize := int64(-1)
-					if create {
-						defer file.lock.Unlock()
-						file.flags |= fileProgress
-						createSize = file.size
-					} else {
-						file.lock.Unlock()
-					}
-					return r.filesWriter.writeToFile(r.targetPath(file.location), blobData, offset, createSize)
-				}
-				err := writeToFile()
-				if err != nil {
-					markFileError(file, err)
-					break
-				}
+			if errFile := sanitizeError(file, err); errFile != nil {
+				return errFile
 			}
 		}
 	}
+
+	return nil
 }
 
-func (r *fileRestorer) loadBlob(rd io.ReaderAt, blobID restic.ID, offset int64, length int) ([]byte, error) {
+func (r *fileRestorer) loadBlob(rd io.Reader, blobID restic.ID, length int, buf []byte) ([]byte, []byte, error) {
 	// TODO reconcile with Repository#loadBlob implementation
 
-	buf := make([]byte, length)
+	if cap(buf) < length {
+		buf = make([]byte, length)
+	} else {
+		buf = buf[:length]
+	}
 
-	n, err := rd.ReadAt(buf, offset)
+	n, err := io.ReadFull(rd, buf)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if n != length {
-		return nil, errors.Errorf("error loading blob %v: wrong length returned, want %d, got %d", blobID.Str(), length, n)
+		return nil, nil, errors.Errorf("error loading blob %v: wrong length returned, want %d, got %d", blobID.Str(), length, n)
 	}
 
 	// decrypt
 	nonce, ciphertext := buf[:r.key.NonceSize()], buf[r.key.NonceSize():]
 	plaintext, err := r.key.Open(ciphertext[:0], nonce, ciphertext, nil)
 	if err != nil {
-		return nil, errors.Errorf("decrypting blob %v failed: %v", blobID, err)
+		return nil, nil, errors.Errorf("decrypting blob %v failed: %v", blobID, err)
 	}
 
 	// check hash
 	if !restic.Hash(plaintext).Equal(blobID) {
-		return nil, errors.Errorf("blob %v returned invalid hash", blobID)
+		return nil, nil, errors.Errorf("blob %v returned invalid hash", blobID)
 	}
 
-	return plaintext, nil
+	return plaintext, buf, nil
 }

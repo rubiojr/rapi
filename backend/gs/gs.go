@@ -235,7 +235,10 @@ func (be *Backend) Save(ctx context.Context, h restic.Handle, rd restic.RewindRe
 	w := be.bucket.Object(objName).NewWriter(ctx)
 	w.ChunkSize = 0
 	wbytes, err := io.Copy(w, rd)
-	w.Close()
+	cerr := w.Close()
+	if err == nil {
+		err = cerr
+	}
 
 	be.sem.ReleaseToken()
 
@@ -245,6 +248,10 @@ func (be *Backend) Save(ctx context.Context, h restic.Handle, rd restic.RewindRe
 	}
 
 	debug.Log("%v -> %v bytes", objName, wbytes)
+	// sanity check
+	if wbytes != rd.Length() {
+		return errors.Errorf("wrote %d bytes instead of the expected %d bytes", wbytes, rd.Length())
+	}
 	return nil
 }
 
