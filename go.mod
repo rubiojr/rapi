@@ -30,7 +30,7 @@ require (
 	github.com/ncw/swift v1.0.52
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pkg/errors v0.9.1
-	github.com/pkg/sftp v1.12.0
+	github.com/pkg/sftp v1.13.2
 	github.com/pkg/xattr v0.4.1
 	github.com/prometheus/procfs v0.2.0
 	github.com/restic/chunker v0.4.0
@@ -39,11 +39,11 @@ require (
 	github.com/smartystreets/assertions v1.2.0 // indirect
 	github.com/smartystreets/goconvey v1.6.4 // indirect
 	github.com/urfave/cli/v2 v2.2.0
-	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
-	golang.org/x/net v0.0.0-20200904194848-62affa334b73
+	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b
+	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
-	golang.org/x/sys v0.0.0-20200918174421-af09f7315aff
+	golang.org/x/sys v0.0.0-20210423185535-09eb48e85fd7
 	golang.org/x/text v0.3.3
 	google.golang.org/api v0.33.0
 	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b // indirect
