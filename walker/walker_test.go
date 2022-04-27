@@ -23,22 +23,28 @@ func BuildTreeMap(tree TestTree) (m TreeMap, root restic.ID) {
 }
 
 func buildTreeMap(tree TestTree, m TreeMap) restic.ID {
-	res := restic.NewTree()
+	res := restic.NewTree(0)
 
 	for name, item := range tree {
 		switch elem := item.(type) {
 		case TestFile:
-			res.Insert(&restic.Node{
+			err := res.Insert(&restic.Node{
 				Name: name,
 				Type: "file",
 			})
+			if err != nil {
+				panic(err)
+			}
 		case TestTree:
 			id := buildTreeMap(elem, m)
-			res.Insert(&restic.Node{
+			err := res.Insert(&restic.Node{
 				Name:    name,
 				Subtree: &id,
 				Type:    "dir",
 			})
+			if err != nil {
+				panic(err)
+			}
 		default:
 			panic(fmt.Sprintf("invalid type %T", elem))
 		}

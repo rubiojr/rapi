@@ -3,7 +3,6 @@ package dump
 import (
 	"archive/tar"
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,22 +11,22 @@ import (
 	"github.com/rubiojr/rapi/restic"
 )
 
-type tarDumper struct {
-	w *tar.Writer
-}
+func (d *Dumper) dumpTar(ctx context.Context, ch <-chan *restic.Node) (err error) {
+	w := tar.NewWriter(d.w)
 
-// Statically ensure that tarDumper implements dumper.
-var _ dumper = tarDumper{}
+	defer func() {
+		if err == nil {
+			err = w.Close()
+			err = errors.Wrap(err, "Close")
+		}
+	}()
 
-// WriteTar will write the contents of the given tree, encoded as a tar to the given destination.
-func WriteTar(ctx context.Context, repo restic.Repository, tree *restic.Tree, rootPath string, dst io.Writer) error {
-	dmp := tarDumper{w: tar.NewWriter(dst)}
-
-	return writeDump(ctx, repo, tree, rootPath, dmp, dst)
-}
-
-func (dmp tarDumper) Close() error {
-	return dmp.w.Close()
+	for node := range ch {
+		if err := d.dumpNodeTar(ctx, node, w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // copied from archive/tar.FileInfoHeader
@@ -39,7 +38,7 @@ const (
 	cISVTX = 0o1000 // Save text (sticky bit)
 )
 
-func (dmp tarDumper) dumpNode(ctx context.Context, node *restic.Node, repo restic.Repository) error {
+func (d *Dumper) dumpNodeTar(ctx context.Context, node *restic.Node, w *tar.Writer) error {
 	relPath, err := filepath.Rel("/", node.Path)
 	if err != nil {
 		return err
@@ -84,13 +83,12 @@ func (dmp tarDumper) dumpNode(ctx context.Context, node *restic.Node, repo resti
 		header.Name += "/"
 	}
 
-	err = dmp.w.WriteHeader(header)
-
+	err = w.WriteHeader(header)
 	if err != nil {
 		return errors.Wrap(err, "TarHeader")
 	}
 
-	return GetNodeData(ctx, dmp.w, repo, node)
+	return d.writeNode(ctx, w, node)
 }
 
 func parseXattrs(xattrs []restic.ExtendedAttribute) map[string]string {

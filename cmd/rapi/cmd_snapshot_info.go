@@ -39,7 +39,7 @@ func printSnapshotInfo(c *cli.Context) error {
 	s.Suffix = " Calculating snapshot stats, this may take some time"
 	s.Start()
 
-	sid, err := restic.FindLatestSnapshot(ctx, rapiRepo, []string{}, []restic.TagList{}, []string{})
+	sid, err := restic.FindLatestSnapshot(ctx, rapiRepo, []string{}, []restic.TagList{}, []string{}, nil)
 	if err != nil {
 		return err
 	}

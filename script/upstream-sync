@@ -17,7 +17,7 @@ fix_paths() {
 }
 
 # Sync rapi's public modules
-for dir in restic crypto repository pack backend; do
+for dir in walker restic crypto repository pack backend; do
   rsync -a $RESTIC_SOURCE/internal/$dir/ $dir/
   fix_paths $dir 
 done

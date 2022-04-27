@@ -12,7 +12,6 @@ require (
 	github.com/cenkalti/backoff/v4 v4.1.1
 	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
-	github.com/dchest/siphash v1.2.2
 	github.com/dnaeon/go-vcr v1.0.1 // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elithrar/simple-scrypt v1.3.0
@@ -27,7 +26,7 @@ require (
 	github.com/minio/sha256-simd v1.0.0
 	github.com/muesli/reflow v0.2.1-0.20201103142440-d06e0479f1e5
 	github.com/muesli/termenv v0.7.4
-	github.com/ncw/swift v1.0.52
+	github.com/ncw/swift/v2 v2.0.1
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.2

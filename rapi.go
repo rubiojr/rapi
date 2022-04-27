@@ -627,7 +627,7 @@ func open(s string, gopts ResticOptions, opts options.Options) (restic.Backend, 
 	case "azure":
 		be, err = azure.Open(cfg.(azure.Config), rt)
 	case "swift":
-		be, err = swift.Open(cfg.(swift.Config), rt)
+		be, err = swift.Open(gopts.ctx, cfg.(swift.Config), rt)
 	case "b2":
 		be, err = b2.Open(DefaultOptions.ctx, cfg.(b2.Config), rt)
 	case "rest":
